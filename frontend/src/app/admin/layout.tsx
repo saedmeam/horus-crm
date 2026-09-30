@@ -1,0 +1,92 @@
+"use client";
+import { useEffect, useState } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
+import { Users, Phone, Settings, LogOut, BellRing } from 'lucide-react';
+import Link from 'next/link';
+import MainSidebar from '@/components/MainSidebar';
+
+export default function AdminLayout({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const [user, setUser] = useState<any>(null);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    const userData = localStorage.getItem('user');
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+    const parsedUser = JSON.parse(userData || '{}');
+    setUser(parsedUser);
+  }, [router]);
+
+  if (!user) return null; // Loading state
+
+  const isAdmin = user.role === 'SUPERADMIN' || user.role === 'ADMIN';
+
+  const allNavItems = [
+    { name: 'Notificaciones', icon: BellRing, href: '/admin/notificaciones', requiresAdmin: false },
+    { name: 'Usuarios', icon: Users, href: '/admin/users', requiresAdmin: true },
+    { name: 'Líneas WhatsApp', icon: Phone, href: '/admin/lines', requiresAdmin: true },
+    { name: 'Respuestas Rápidas', icon: require('lucide-react').MessageSquarePlus, href: '/admin/snippets', requiresAdmin: true },
+    { name: 'Etapas Kanban', icon: require('lucide-react').LayoutDashboard, href: '/admin/kanban-settings', requiresAdmin: true },
+    { name: 'Campos Contactos', icon: require('lucide-react').List, href: '/admin/contact-fields', requiresAdmin: true },
+  ];
+
+  const navItems = allNavItems.filter(item => !item.requiresAdmin || isAdmin);
+
+  return (
+    <div className="flex h-screen bg-gray-50">
+      {/* Sidebar Principal */}
+      <MainSidebar user={user} />
+      
+      {/* Submenú de Configuración */}
+      <div className="w-64 bg-white border-r border-gray-200 flex flex-col">
+        <div className="h-16 flex items-center px-6 border-b border-gray-200">
+          <h2 className="text-xl font-bold text-gray-800">Configuración</h2>
+        </div>
+        
+        <div className="p-4 flex-1">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4 px-2">Opciones</p>
+          <nav className="space-y-1">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = pathname.startsWith(item.href);
+              return (
+                <Link
+                  key={item.name}
+                  href={item.href}
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    isActive 
+                      ? 'bg-blue-50 text-blue-700' 
+                      : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                  }`}
+                >
+                  <Icon size={18} className={isActive ? 'text-blue-600' : 'text-gray-400'} />
+                  {item.name}
+                </Link>
+              );
+            })}
+          </nav>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 shrink-0">
+          <h1 className="text-lg font-semibold text-gray-800">Panel de Control ({user.role})</h1>
+          <div className="flex items-center gap-4">
+            <span className="text-sm font-semibold text-gray-600">{user.name}</span>
+            <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-semibold shadow-sm">
+              {user.name?.charAt(0) || 'U'}
+            </div>
+          </div>
+        </header>
+        <main className="p-8 flex-1 overflow-auto bg-gray-50">
+          {children}
+        </main>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,181 @@
+// Prisma Schema para Horustech CRM (PostgreSQL)
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  SUPERADMIN
+  ADMIN
+  SALES
+  TECH
+  SUPERVISOR
+}
+
+enum ConversationStatus {
+  UNASSIGNED
+  OPEN
+  PENDING
+  CLOSED
+}
+
+
+
+enum MediaType {
+  TEXT
+  AUDIO
+  IMAGE
+  VIDEO
+  DOCUMENT_PDF
+  FILE_3D_STL
+  FILE_DICOM
+}
+
+enum SenderType {
+  CLIENT
+  AGENT
+  AI_BOT
+  SYSTEM
+}
+
+model User {
+  id               String          @id @default(uuid())
+  respondUserId    String?         @unique // Ej: 1179198 (Sofia), 1179200 (Mario), 1179201 (Edgar)
+  name             String
+  username         String?         @unique
+  email            String          @unique
+  passwordHash     String
+  role             Role            @default(SALES)
+  active           Boolean         @default(true)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  lines            WhatsAppLine[]
+  assignedContacts Contact[]
+  conversations    Conversation[]
+  reminders        Reminder[]
+  internalComments InternalComment[]
+  messages         Message[]
+}
+
+model WhatsAppLine {
+  id               String          @id @default(uuid())
+  phoneNumberId    String          @unique // El ID numérico de la API de Meta
+  name             String          // Ej: 'Ventas 1', 'Soporte'
+  active           Boolean         @default(true)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  users            User[]          // Usuarios que tienen acceso a esta línea
+  conversations    Conversation[]
+}
+
+model Contact {
+  id               String          @id @default(uuid())
+  phone            String          @unique
+  name             String?
+  email            String?
+  city             String?
+  institution      String?
+  assignedUserId   String?
+  assignedUser     User?           @relation(fields: [assignedUserId], references: [id])
+  customFields     Json?           @default("{}")
+  lastIncomingAt   DateTime?       
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  conversations    Conversation[]
+  reminders        Reminder[]
+  backorders       Backorder[]
+  tags             ContactTag[]
+}
+
+model Conversation {
+  id               String             @id @default(uuid())
+  contactId        String
+  contact          Contact            @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  channel          String             @default("whatsapp")
+  whatsappLineId   String?
+  whatsappLine     WhatsAppLine?      @relation(fields: [whatsappLineId], references: [id])
+  status           ConversationStatus @default(UNASSIGNED)
+  stage            String             @default("NUEVO_LEAD")
+  assignedUserId   String?
+  assignedUser     User?              @relation(fields: [assignedUserId], references: [id])
+  aiActive         Boolean            @default(true)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  messages         Message[]
+  internalComments InternalComment[]
+}
+
+model Message {
+  id               String       @id @default(uuid())
+  conversationId   String
+  conversation     Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderType       SenderType
+  senderUserId     String?
+  senderUser       User?        @relation(fields: [senderUserId], references: [id])
+  content          String?      @db.Text
+  mediaUrl         String?
+  mediaType        MediaType    @default(TEXT)
+  metaMessageId    String?      @unique // ID del mensaje en WhatsApp Cloud API
+  status           String?      // SENT, DELIVERED, READ
+  createdAt        DateTime     @default(now())
+}
+
+model InternalComment {
+  id               String       @id @default(uuid())
+  conversationId   String
+  conversation     Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  authorId         String
+  author           User         @relation(fields: [authorId], references: [id])
+  content          String       @db.Text
+  mentions         String[]     // Array de User IDs mencionados
+  createdAt        DateTime     @default(now())
+}
+
+model Reminder {
+  id               String       @id @default(uuid())
+  contactId        String
+  contact          Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  userId           String
+  user             User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scheduledFor     DateTime     // Fecha y hora del recordatorio pactado
+  notes            String       @db.Text
+  isCompleted      Boolean      @default(false)
+  createdAt        DateTime     @default(now())
+}
+
+model Backorder {
+  id               String       @id @default(uuid())
+  contactId        String
+  contact          Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  productName      String
+  category         String?      
+  quantity         Int          @default(1)
+  specification    String?      
+  notes            String?      @db.Text
+  createdAt        DateTime     @default(now())
+}
+
+model ContactTag {
+  id               String       @id @default(uuid())
+  contactId        String
+  contact          Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tagName          String
+  createdAt        DateTime     @default(now())
+
+  @@unique([contactId, tagName])
+}
+
+
+model SystemSetting {
+  id   String @id @default("default")
+  data Json   @default("{}")
+}

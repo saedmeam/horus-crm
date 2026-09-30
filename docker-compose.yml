@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: horus_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: horustech_password
+      POSTGRES_DB: horustech_crm
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+
+  backend:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: horus_backend
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./data/uploads:/app/uploads
+      - ./data/config:/app/config
+    environment:
+      - DATABASE_URL=postgresql://postgres:horustech_password@db:5432/horustech_crm?schema=public
+      - SETTINGS_PATH=/app/config/settings.json
+      - JWT_SECRET=supersecret123
+      - META_ACCESS_TOKEN=${META_ACCESS_TOKEN:-}
+      - META_PHONE_ID=${META_PHONE_ID:-}
+      - PORT=3001
+    restart: unless-stopped
+    depends_on:
+      - db
+
+  frontend:
+    build: 
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: horus_frontend
+    ports:
+      - "3002:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:3001
+    restart: unless-stopped
+    depends_on:
+      - backend
