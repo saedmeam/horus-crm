@@ -6,14 +6,14 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 
-# Copiar el código fuente
-COPY . .
-
-# Generar Prisma Client
+# Copiar el esquema de Prisma y generar el cliente
+COPY prisma ./prisma/
 RUN npx prisma generate
 
-# Exponer el puerto
+# Copiar el resto del código
+COPY . .
+
 EXPOSE 3001
 
-# Ejecutar el backend asegurando que la base de datos se sincronice
-CMD ["sh", "-c", "npx prisma db push && npx ts-node src/index.ts"]
+# Comando para iniciar el backend
+CMD ["npm", "start"]

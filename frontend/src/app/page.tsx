@@ -3,7 +3,35 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { io, Socket } from 'socket.io-client';
 import MainSidebar from '@/components/MainSidebar';
-import { Send, Paperclip, Mic, UserPlus, Search, Info, Moon, Sun, X, Save, Settings, Bell, AlarmClock, Check, MessageSquare, Reply, FileText, UserCircle, ShoppingCart, Box } from 'lucide-react';
+import { Toaster, toast } from 'react-hot-toast';
+import { Send, Paperclip, Mic, UserPlus, Search, Info, Moon, Sun, X, Save, Settings, Bell, AlarmClock, Check, MessageSquare, Reply, FileText, UserCircle, ShoppingCart, Box, CheckCheck } from 'lucide-react';
+
+
+// Make sure X and FileText are imported, they are on line 6.
+
+function formatChatListDate(dateString: string) {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  const target = new Date(date);
+  target.setHours(0, 0, 0, 0);
+  
+  const diffTime = today.getTime() - target.getTime();
+  const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+  
+  if (diffDays === 0) {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } else if (diffDays === 1) {
+    return 'Ayer';
+  } else if (diffDays >= 2 && diffDays <= 6) {
+    const days = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+    return days[date.getDay()];
+  } else {
+    return date.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  }
+}
 
 export default function CRMChatLayout() {
   const router = useRouter();
@@ -15,6 +43,8 @@ export default function CRMChatLayout() {
   const [replyingTo, setReplyingTo] = useState<any>(null);
   const [chatMode, setChatMode] = useState<'MESSAGE' | 'NOTE'>('MESSAGE');
   const [snippets, setSnippets] = useState<any[]>([]);
+  const [metaTemplates, setMetaTemplates] = useState<any[]>([]);
+  const [templateWizard, setTemplateWizard] = useState<any>(null);
   const [showSnippets, setShowSnippets] = useState(false);
   const [snippetFilter, setSnippetFilter] = useState('');
   const [pendingMedia, setPendingMedia] = useState<string | null>(null);
@@ -22,6 +52,13 @@ export default function CRMChatLayout() {
   const [showMentionList, setShowMentionList] = useState(false);
   const [agents, setAgents] = useState<any[]>([]);
     const [showAssignDropdown, setShowAssignDropdown] = useState(false);
+  
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
+  const audioChunksRef = require('react').useRef<Blob[]>([]);
+  const recordingTimerRef = require('react').useRef<any>(null);
+
   const [reminders, setReminders] = useState<any[]>([]);
 const [backorders, setBackorders] = useState<any[]>([]);
 const [showBackorderModal, setShowBackorderModal] = useState(false);
@@ -36,11 +73,32 @@ const [boNotes, setBoNotes] = useState('');
   const [reminderNotes, setReminderNotes] = useState('');
   const [reminderDate, setReminderDate] = useState('');
   const [reminderTime, setReminderTime] = useState('');
+  const messagesEndRef = require('react').useRef<HTMLDivElement>(null);
+  const chatScrollRef = require('react').useRef<HTMLDivElement>(null);
+  const [showScrollDown, setShowScrollDown] = useState(false);
+  
+  const scrollToBottom = (behavior: 'auto' | 'smooth' = 'auto') => {
+    setTimeout(() => {
+      if (messagesEndRef.current) {
+        messagesEndRef.current.scrollIntoView({ behavior, block: 'end' });
+      }
+    }, 150);
+  };
+  
+  require('react').useEffect(() => {
+    // Solo scrollear cuando tenemos mensajes cargados
+    if (messages && messages.length > 0) {
+      scrollToBottom('auto');
+    }
+  }, [selectedChat, messages]);
   const [socket, setSocket] = useState<Socket | null>(null);
   
   const [darkMode, setDarkMode] = useState(false);
 
-  const [showInfo, setShowInfo] = useState(false);
+  
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState('hello_world');
+const [showInfo, setShowInfo] = useState(false);
   const [contactName, setContactName] = useState('');
   const [contactEmail, setContactEmail] = useState('');
   const [contactDireccion, setContactDireccion] = useState('');
@@ -91,12 +149,21 @@ const [boNotes, setBoNotes] = useState('');
       }
     }, 5000); // Check every 5 seconds
 
-    return () => clearInterval(interval);
+  
+    return (
+) => clearInterval(interval);
   }, [reminders]);
 
   const fetchReminders = () => {
     fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/reminders`, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } })
-      .then(res => res.json())
+      .then(res => {
+        if(res.status === 401 || res.status === 403) {
+            localStorage.removeItem('token');
+            window.location.href = '/login';
+            throw new Error('Auth error');
+        }
+        return res.json();
+      })
       .then(data => setReminders(data))
       .catch(e => console.error(e));
   };
@@ -120,11 +187,11 @@ const [boNotes, setBoNotes] = useState('');
         setReminderDate('');
         setReminderTime('');
         fetchReminders();
-        alert('Recordatorio guardado');
+        toast.success('Recordatorio guardado');
       }
     } catch (e) {
       console.error(e);
-      alert('Error guardando recordatorio');
+      toast.error('Error guardando recordatorio');
     }
   };
     
@@ -151,14 +218,21 @@ const [boNotes, setBoNotes] = useState('');
           setBoNotes('');
           
           fetch((process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001') + '/api/contacts/' + selectedChat.contactId + '/backorders', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } })
-            .then(r => r.json())
+            .then(res => {
+        if(res.status === 401 || res.status === 403) {
+            localStorage.removeItem('token');
+            window.location.href = '/login';
+            throw new Error('Auth error');
+        }
+        return res.json();
+      })
             .then(data => setBackorders(Array.isArray(data) ? data : []));
             
-          alert('Pedido guardado correctamente');
+          toast.success('Pedido guardado correctamente');
         }
       } catch (e) {
         console.error(e);
-        alert('Error guardando pedido');
+        toast.error('Error guardando pedido');
       }
     };
 
@@ -178,11 +252,38 @@ const [boNotes, setBoNotes] = useState('');
 
   const fetchConversations = () => {
     fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/settings`, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } })
-      .then(res => res.json())
+      .then(res => {
+        if(res.status === 401 || res.status === 403) {
+            localStorage.removeItem('token');
+            window.location.href = '/login';
+            throw new Error('Auth error');
+        }
+        return res.json();
+      })
       .then(data => setSnippets(data.snippets || []));
 
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/templates`, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } })
+      .then(res => {
+        if(res.status === 401 || res.status === 403) {
+            localStorage.removeItem('token');
+            window.location.href = '/login';
+            throw new Error('Auth error');
+        }
+        return res.json();
+      })
+      .then(data => {
+         if(Array.isArray(data)) setMetaTemplates(data.filter((t: any) => t.status === 'APPROVED' || t.status === 'LOCAL'));
+      }).catch(e => console.error("Error fetching templates", e));
+
     fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/conversations`, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } })
-      .then(res => res.json())
+      .then(res => {
+        if(res.status === 401 || res.status === 403) {
+            localStorage.removeItem('token');
+            window.location.href = '/login';
+            throw new Error('Auth error');
+        }
+        return res.json();
+      })
       .then(data => setConversations(Array.isArray(data) ? data : []));
   };
 
@@ -205,7 +306,14 @@ const [boNotes, setBoNotes] = useState('');
     setSocket(newSocket);
     fetchConversations();
       fetchReminders();
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/users/agents`, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } }).then(res => res.json()).then(data => setAgents(data));
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/users/agents`, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } }).then(res => {
+        if(res.status === 401 || res.status === 403) {
+            localStorage.removeItem('token');
+            window.location.href = '/login';
+            throw new Error('Auth error');
+        }
+        return res.json();
+      }).then(data => setAgents(data));
 
     
     
@@ -229,7 +337,21 @@ const [boNotes, setBoNotes] = useState('');
       }
     });
 
-    newSocket.on('new_message', (newMsg: any) => {
+    newSocket.on('message_status_update', (data: any) => {
+        setMessages(prev => prev.map(msg => 
+          (data.id && msg.id === data.id) || (data.metaMessageId && msg.metaMessageId === data.metaMessageId)
+            ? { ...msg, status: data.status, metaMessageId: data.metaMessageId || msg.metaMessageId } 
+            : msg
+        ));
+      });
+      
+      newSocket.on('new_message', (newMsg: any) => {
+        if (newMsg.senderType === 'CLIENT') {
+          try {
+            const audio = new Audio('/notification.mp3');
+            audio.play().catch(e => console.log('Audio auto-play blocked', e));
+          } catch(e) {}
+        }
       // Filtrar mensajes que no pertenecen al usuario actual
       const ctx = newMsg.conversationContext;
       if (ctx) {
@@ -347,7 +469,14 @@ const [boNotes, setBoNotes] = useState('');
     }).catch(e => console.error(e));
 
     fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/conversations/` + chat.id + '/messages', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } })
-      .then(res => res.json())
+      .then(res => {
+        if(res.status === 401 || res.status === 403) {
+            localStorage.removeItem('token');
+            window.location.href = '/login';
+            throw new Error('Auth error');
+        }
+        return res.json();
+      })
       .then(data => setMessages(data));
   };
 
@@ -378,6 +507,142 @@ const [boNotes, setBoNotes] = useState('');
     }
   };
 
+  
+  const handleSendTemplate = async () => {
+    if (!selectedChat) return;
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`http://localhost:3001/api/conversations/${selectedChat.id}/template`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ templateName: selectedTemplate })
+      });
+      if (res.ok) {
+        setShowTemplateModal(false);
+      } else {
+        toast.error('Error al enviar plantilla. Verifica que el nombre sea correcto en Facebook.');
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+      recorder.onstop = async () => {
+        clearInterval(recordingTimerRef.current);
+        setRecordingTime(0);
+        setIsRecording(false);
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        
+        stream.getTracks().forEach(track => track.stop());
+
+        if (audioBlob.size > 0 && selectedChat) {
+          const formData = new FormData();
+          formData.append('file', audioBlob, 'voice_note.webm');
+          const token = localStorage.getItem('token');
+          
+          try {
+            const uploadRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/upload`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${token}` },
+              body: formData
+            });
+            if (!uploadRes.ok) {
+               if (uploadRes.status === 401 || uploadRes.status === 403) {
+                  localStorage.removeItem('token');
+                  window.location.href = '/login';
+               }
+               return;
+            }
+            const { url } = await uploadRes.json();
+            
+            await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/conversations/${selectedChat.id}/messages`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+              body: JSON.stringify({ content: '🎙️ Nota de voz', mediaUrl: url, mediaType: 'AUDIO' })
+            });
+          } catch(e) {
+            console.error('Error enviando audio', e);
+          }
+        }
+      };
+      
+      recorder.start();
+      setMediaRecorder(recorder);
+      setIsRecording(true);
+      
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingTime(prev => prev + 1);
+      }, 1000);
+      
+    } catch (err) {
+      console.error("No se pudo acceder al micrófono:", err);
+      toast.error('Por favor permite el acceso al micrófono en tu navegador.');
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
+    }
+  };
+
+  const formatTime = (secs: number) => {
+    const m = Math.floor(secs / 60).toString().padStart(2, '0');
+    const s = (secs % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  };
+
+const handleSelectMetaTemplate = (t: any) => {
+    const varNames = JSON.parse(t.variables || '[]');
+    if (varNames.length > 0) {
+      setTemplateWizard({ template: t, step: 0, examples: Array(varNames.length).fill(''), varCount: varNames.length });
+    } else {
+      executeSendTemplate(t, []);
+    }
+    setShowSnippets(false);
+  };
+
+  const executeSendTemplate = async (template: any, examples: string[]) => {
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/conversations/${selectedChat.id}/template`, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + localStorage.getItem('token'),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          templateName: template.name,
+          languageCode: template.language,
+          variables: examples
+        })
+      });
+      if (!res.ok) {
+         if (res.status === 401 || res.status === 403) {
+            localStorage.removeItem('token');
+            window.location.href = '/login';
+            return;
+         }
+         let d = {};
+         try { d = await res.json(); } catch(e) {}
+         toast.error('Error al enviar plantilla: ' + (d.error || 'Error de Meta'));
+      } else {
+         setInputText('');
+      }
+    } catch(e) {
+       toast.error('Error de conexión');
+    }
+  };
+
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim() || !selectedChat) return;
@@ -407,10 +672,10 @@ const [boNotes, setBoNotes] = useState('');
       return;
     }
 
-    await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/conversations/` + selectedChat.id + '/messages', {
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
-      method: 'POST',
-      body: JSON.stringify({ 
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/conversations/` + selectedChat.id + '/messages', {
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
+        method: 'POST',
+        body: JSON.stringify({ 
             content: finalContent,
             mediaUrl: pendingMedia || null,
             mediaType: pendingMedia ? (
@@ -420,7 +685,11 @@ const [boNotes, setBoNotes] = useState('');
               'DOCUMENT_PDF'
             ) : 'TEXT'
           })
-    });
+      });
+      if (!res.ok) {
+        const errorData = await res.json();
+        toast.error('Error enviando mensaje: ' + (errorData.error || 'Error desconocido'));
+      }
   };
 
   const handleSaveContactInfo = async () => {
@@ -440,14 +709,14 @@ const [boNotes, setBoNotes] = useState('');
         })
       });
       if (res.ok) {
-        alert('Informacion de contacto guardada exitosamente');
+        toast.success('Información de contacto guardada exitosamente');
         fetchConversations();
       } else {
-        alert('Error al guardar contacto');
+        toast.error('Error al guardar contacto');
       }
     } catch (e) {
       console.error(e);
-      alert('Error de conexion');
+      toast.error('Error de conexión');
     }
   };
 
@@ -615,7 +884,7 @@ const [boNotes, setBoNotes] = useState('');
                     <div className="flex justify-between items-baseline mb-0.5">
                       <h2 className="font-semibold text-gray-800 dark:text-[#e9edef] truncate pr-2">{chat?.contact?.name || chat?.contact?.phone}</h2>
                       <span className="text-xs text-gray-400 dark:text-[#8696a0] shrink-0">
-                        {chat.messages[0] ? new Date(chat.messages[0].createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}
+                        {chat.messages[0] ? formatChatListDate(chat.messages[0].createdAt) : ''}
                       </span>
                     </div>
                     <div className="flex justify-between items-center gap-2">
@@ -722,7 +991,14 @@ const [boNotes, setBoNotes] = useState('');
                     opacity: darkMode ? 0.05 : 0.4 
                   }}
                 />
-                <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-2 relative z-10 flex flex-col">
+                <div 
+  className="flex-1 min-h-0 overflow-y-auto p-4 space-y-2 relative z-10 flex flex-col"
+  ref={chatScrollRef}
+  onScroll={(e) => {
+    const target = e.currentTarget;
+    setShowScrollDown(target.scrollHeight - target.scrollTop - target.clientHeight > 150);
+  }}
+>
                     {messages.map((msg, idx) => {
                       if (msg.isInternal) {
                         return (
@@ -789,9 +1065,28 @@ const [boNotes, setBoNotes] = useState('');
   )}
 <p className="text-sm font-medium leading-relaxed text-gray-900 dark:text-gray-100">{msg.content}</p>
 
-                            <span className="text-[10px] block text-right mt-1 text-gray-500 dark:text-gray-400">
+                            <div className="flex justify-end items-center gap-1 mt-1">
+                                <span className="text-[10px] text-gray-500 dark:text-gray-400">
+                                  
                               {new Date(msg.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                            </span>
+                            
+                                </span>
+                                {(!isClient && !msg.isInternal) && (
+                                  <span className="text-[12px] flex items-center">
+                                    {msg.status === 'READ' ? (
+                                      <CheckCheck className="w-3.5 h-3.5 text-blue-500" />
+                                    ) : msg.status === 'DELIVERED' ? (
+                                      <CheckCheck className="w-3.5 h-3.5 text-gray-400" />
+                                    ) : msg.status === 'SENT' ? (
+                                      <Check className="w-3.5 h-3.5 text-gray-400" />
+                                    ) : msg.status === 'FAILED' ? (
+                                      <X className="w-3.5 h-3.5 text-red-500" title="Error" />
+                                    ) : (
+                                      <Check className="w-3.5 h-3.5 text-gray-300" />
+                                    )}
+                                  </span>
+                                )}
+                              </div>
                           </div>
                           {isClient && !msg.isInternal && (
                             <button onClick={() => setReplyingTo(msg)} className="opacity-0 group-hover:opacity-100 p-1.5 mx-1 text-gray-400 hover:text-blue-500 transition-opacity rounded-full hover:bg-gray-100 dark:hover:bg-[#2a3942]" title="Responder">
@@ -800,9 +1095,19 @@ const [boNotes, setBoNotes] = useState('');
                           )}
                         </div>
                       );
-                    })}
-                  </div>
-              </div>
+                      })}
+                      <div ref={messagesEndRef} className="h-1 shrink-0" />
+                    </div>
+                    {showScrollDown && (
+                      <button
+                        onClick={() => scrollToBottom('smooth')}
+                        className="absolute bottom-24 right-4 p-3 bg-white dark:bg-[#202c33] text-gray-600 dark:text-gray-300 rounded-full shadow-lg border border-gray-200 dark:border-[#2a3942] z-50 hover:text-blue-500 transition-all"
+                        title="Bajar al último mensaje"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
+                      </button>
+                    )}
+                </div>
 
               {/* Tabs & Input de Texto */}
                 <div className={"flex flex-col border-t shrink-0 transition-colors duration-200 z-20 relative " + (chatMode === 'NOTE' ? 'bg-yellow-50 dark:bg-[#2a2718] border-yellow-200 dark:border-yellow-900' : 'bg-gray-100 dark:bg-[#202c33] border-gray-200 dark:border-[#222d34]')}>
@@ -863,14 +1168,14 @@ const [boNotes, setBoNotes] = useState('');
         body: formData
       });
       if (res.ok) {
-        const data = await res.json();
+        let data = { url: '' }; try { data = await res.json(); } catch(e) {}
         setPendingMedia(data.url);
       } else {
-        const err = await res.json();
-        alert('Error: ' + err.error);
+        let err = { error: 'Upload failed' }; try { err = await res.json(); } catch(e) {}
+        toast.error('Error: ' + err.error);
       }
     } catch (e) {
-      alert('Fallo de red al subir el archivo');
+      toast.error('Fallo de red al subir el archivo');
     }
   }} />
 </label>
@@ -900,34 +1205,116 @@ const [boNotes, setBoNotes] = useState('');
   </div>
 )}
 
-{showSnippets && chatMode === 'MESSAGE' && (
-  <div className="absolute bottom-20 left-4 bg-white dark:bg-[#202c33] border border-gray-200 dark:border-[#2a3942] rounded-xl shadow-lg w-80 max-h-64 overflow-y-auto z-20">
-    <div className="p-2 bg-gray-50 dark:bg-[#111b21] border-b border-gray-100 dark:border-[#2a3942] text-xs font-bold text-gray-500">
-      Respuestas Rápidas (Snippets)
-    </div>
-    {snippets.filter(s => s.shortcut.includes(snippetFilter)).map(snippet => (
-      <div 
-        key={snippet.id} 
-        onClick={() => {
-          setInputText(snippet.text || '');
-          if (snippet.mediaUrl) setPendingMedia(snippet.mediaUrl);
-          setShowSnippets(false);
-        }}
-        className="p-3 hover:bg-gray-50 dark:hover:bg-[#2a3942] cursor-pointer border-b border-gray-50 dark:border-[#2a3942] last:border-0 flex flex-col gap-1"
-      >
-        <div className="flex items-center justify-between">
-          <span className="font-bold text-blue-600 dark:text-[#00a884] text-sm font-mono">/{snippet.shortcut}</span>
-          {snippet.mediaUrl && <span className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded">📎 Archivo</span>}
+
+  <>
+      {templateWizard && (
+        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-[#202c33] rounded-2xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col">
+            <div className="p-4 border-b border-gray-100 dark:border-[#2a3942]">
+              <h3 className="font-bold text-gray-800 dark:text-white">Enviar Plantilla Meta: {templateWizard.template.name}</h3>
+              <p className="text-sm text-gray-500">Paso {templateWizard.step + 1} de {templateWizard.varCount}</p>
+            </div>
+            <div className="p-6">
+                <p className="text-sm font-bold text-yellow-600 mb-2">Llena la variable</p>
+                <input 
+                  autoFocus
+                  type="text" 
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-[#111b21] dark:text-white"
+                  placeholder="Valor para el cliente"
+                  value={templateWizard.examples[templateWizard.step] || ''}
+                  onChange={e => {
+                    const newEx = [...templateWizard.examples];
+                    newEx[templateWizard.step] = e.target.value;
+                    setTemplateWizard({...templateWizard, examples: newEx});
+                  }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                        if (templateWizard.step < templateWizard.varCount - 1) {
+                          setTemplateWizard({...templateWizard, step: templateWizard.step + 1});
+                        } else {
+                          executeSendTemplate(templateWizard.template, templateWizard.examples);
+                          setTemplateWizard(null);
+                        }
+                    }
+                  }}
+                />
+            </div>
+            <div className="p-4 border-t border-gray-100 dark:border-[#2a3942] flex justify-end gap-2">
+                <button onClick={() => setTemplateWizard(null)} className="px-4 py-2 text-gray-500">Cancelar</button>
+                <button 
+                  onClick={() => {
+                    if (templateWizard.step < templateWizard.varCount - 1) {
+                        setTemplateWizard({...templateWizard, step: templateWizard.step + 1});
+                    } else {
+                        executeSendTemplate(templateWizard.template, templateWizard.examples);
+                        setTemplateWizard(null);
+                    }
+                  }} 
+                  className="px-4 py-2 bg-[#00a884] text-white rounded-lg font-medium"
+                >
+                  {templateWizard.step < templateWizard.varCount - 1 ? 'Siguiente' : 'Enviar Plantilla'}
+                </button>
+            </div>
+          </div>
         </div>
-        <span className="text-xs text-gray-600 dark:text-gray-300 truncate">{snippet.text}</span>
-      </div>
-    ))}
-    {snippets.filter(s => s.shortcut.includes(snippetFilter)).length === 0 && (
-      <div className="p-4 text-center text-xs text-gray-400">No se encontraron snippets</div>
-    )}
-  </div>
-)}
-<form onSubmit={handleSendMessage} className="flex-1 flex relative">
+      )}
+
+      {showSnippets && chatMode === 'MESSAGE' && (
+        <div className="absolute bottom-20 left-4 bg-white dark:bg-[#202c33] border border-gray-200 dark:border-[#2a3942] rounded-xl shadow-lg w-80 max-h-80 overflow-y-auto z-20">
+          
+          <div className="p-2 bg-blue-50 dark:bg-blue-900/20 border-b border-blue-100 dark:border-blue-800 text-xs font-bold text-blue-700 dark:text-blue-300 flex justify-between">
+            <span>Plantillas Oficiales de Meta</span>
+          </div>
+          {metaTemplates.filter((t: any) => t.name.includes(snippetFilter)).map((t: any) => (
+            <div 
+              key={'meta-'+t.id} 
+              onClick={() => handleSelectMetaTemplate(t)}
+              className="p-3 hover:bg-gray-50 dark:hover:bg-[#2a3942] cursor-pointer border-b border-gray-50 dark:border-[#2a3942] flex flex-col gap-1"
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-blue-600 dark:text-blue-400 text-sm font-mono">/{t.name}</span>
+                <span className="text-[10px] bg-blue-100 text-blue-600 px-1.5 rounded">{t.category}</span>
+              </div>
+              <span className="text-xs text-gray-600 dark:text-gray-300 truncate">{t.bodyText}</span>
+            </div>
+          ))}
+
+          <div className="p-2 bg-gray-50 dark:bg-[#111b21] border-y border-gray-100 dark:border-[#2a3942] text-xs font-bold text-gray-500">
+            Respuestas Rapidas (Snippets)
+          </div>
+          {snippets.filter((s: any) => s.shortcut.includes(snippetFilter)).map((snippet: any) => (
+            <div 
+              key={snippet.id} 
+              onClick={() => {
+                setInputText(snippet.text || '');
+                if (snippet.mediaUrl) setPendingMedia(snippet.mediaUrl);
+                setShowSnippets(false);
+              }}
+              className="p-3 hover:bg-gray-50 dark:hover:bg-[#2a3942] cursor-pointer border-b border-gray-50 dark:border-[#2a3942] last:border-0 flex flex-col gap-1"
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-[#00a884] text-sm font-mono">/{snippet.shortcut}</span>
+              </div>
+              <span className="text-xs text-gray-600 dark:text-gray-300 truncate">{snippet.text}</span>
+            </div>
+          ))}
+
+          {snippets.filter((s: any) => s.shortcut.includes(snippetFilter)).length === 0 && metaTemplates.filter((t: any) => t.name.includes(snippetFilter)).length === 0 && (
+            <div className="p-4 text-center text-xs text-gray-400">No se encontraron atajos</div>
+          )}
+        </div>
+      )}
+  </>
+
+  <button 
+    type="button"
+    onClick={() => setShowTemplateModal(true)}
+    title="Enviar Plantilla (Romper 24h)" 
+    className="p-3 text-white rounded-full shadow-md transition-colors bg-green-600 hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-600 mr-2"
+  >
+    <FileText size={20} />
+  </button>
+  <form onSubmit={handleSendMessage} className="flex-1 flex relative">
                       <input 
                         type="text" 
                         value={inputText}
@@ -1188,20 +1575,47 @@ const [boNotes, setBoNotes] = useState('');
       )}
       
       </div>
+    
+      {/* MODAL DE PLANTILLAS */}
+      {showTemplateModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-gray-100 bg-gray-50">
+              <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                <FileText size={18} className="text-green-600" /> 
+                Enviar Plantilla (Meta)
+              </h3>
+              <button onClick={() => setShowTemplateModal(false)} className="text-gray-400 hover:text-gray-600 rounded-full p-1 hover:bg-gray-200">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-gray-600">
+                Usa plantillas pre-aprobadas para iniciar chats o responder después de 24 horas.
+              </p>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Nombre de la Plantilla</label>
+                <input 
+                  type="text" 
+                  value={selectedTemplate}
+                  onChange={(e) => setSelectedTemplate(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:outline-none"
+                  placeholder="ej: seguimiento_cotizacion"
+                />
+              </div>
+              <div className="pt-2">
+                <button 
+                  onClick={handleSendTemplate}
+                  className="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-2 rounded-lg transition-colors flex items-center justify-center gap-2"
+                >
+                  <Send size={18} /> Enviar Plantilla
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-

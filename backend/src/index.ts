@@ -24,6 +24,18 @@ app.use(express.urlencoded({ extended: true }));
 
 const prisma = new PrismaClient();
 
+const getMetaCredentials = async () => {
+  const setting = await prisma.systemSetting.findUnique({ where: { id: 'default' } });
+  const data: any = setting?.data || {};
+  return {
+    whatsappToken: data.WHATSAPP_TOKEN || process.env.WHATSAPP_TOKEN,
+    verifyToken: data.WHATSAPP_VERIFY_TOKEN || process.env.WHATSAPP_VERIFY_TOKEN,
+    wabaId: data.WABA_ID || '',
+    phoneNumberId: data.DEFAULT_PHONE_NUMBER_ID || process.env.DEFAULT_PHONE_NUMBER_ID
+  };
+};
+
+
 // --- Auth Middleware ---
 const authenticateToken = (req: any, res: any, next: any) => {
   const authHeader = req.headers['authorization'];
@@ -268,6 +280,83 @@ io.on('connection', (socket) => {
 // --- FASE 2: ENDPOINTS PARA LA INTERFAZ DEL CRM ---
 
 
+
+// --- ENVIAR PLANTILLA (WhatsApp Template) ---
+app.post('/api/conversations/:id/template', authenticateToken, async (req: any, res: any) => {
+  try {
+    const { id } = req.params;
+    const { templateName, languageCode = 'es' } = req.body;
+
+    const conversation = await prisma.conversation.findUnique({
+      where: { id },
+      include: { contact: true }
+    });
+
+    if (!conversation) return res.status(404).json({ error: 'Conversacin no encontrada' });
+
+    // Payload para Meta
+    // Armar el payload con o sin variables
+    const components = [];
+    if (req.body.variables && req.body.variables.length > 0) {
+      components.push({
+        type: 'body',
+        parameters: req.body.variables.map((val: string) => ({
+          type: 'text',
+          text: val
+        }))
+      });
+    }
+
+    const metaPayload: any = {
+      messaging_product: 'whatsapp',
+      to: conversation.contact.phone,
+      type: 'template',
+      template: {
+        name: templateName,
+        language: { code: languageCode }
+      }
+    };
+
+    if (components.length > 0) {
+      metaPayload.template.components = components;
+    }
+
+    // Llamada a WhatsApp API
+    const metaRes = await fetch(
+      `https://graph.facebook.com/v17.0/${process.env.META_PHONE_ID}/messages`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.WHATSAPP_TOKEN}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(metaPayload)
+      }
+    );
+
+    const metaData = await metaRes.json();
+    if (!metaRes.ok) throw new Error(metaData.error?.message || 'Error Meta');
+    const metaMessageId = metaData.messages[0].id;
+
+    // Guardar en la DB
+    const newMessage = await prisma.message.create({
+      data: {
+        conversationId: id,
+        senderType: 'AGENT',
+        senderUserId: req.user.id,
+        content: `[Plantilla Enviada: ${templateName}]`,
+        metaMessageId
+      }
+    });
+
+    io.emit('new_message', newMessage);
+    res.json(newMessage);
+  } catch (error: any) {
+    console.error('Error enviando plantilla:', error.response?.data || error);
+    res.status(500).json({ error: 'Error enviando plantilla', details: error.response?.data });
+  }
+});
+
 app.put('/api/conversations/:id/assign', authenticateToken, async (req: any, res: any) => {
   try {
     const { id } = req.params;
@@ -491,8 +580,9 @@ app.post('/api/conversations/:id/messages', authenticateToken, async (req: any, 
 
     io.emit('new_message', { ...savedMessage, conversationContext: conversation });
 
-    const token = process.env.WHATSAPP_TOKEN;
-    let phoneNumberId = process.env.DEFAULT_PHONE_NUMBER_ID || '';
+    const creds = await getMetaCredentials();
+      const token = creds.whatsappToken || process.env.WHATSAPP_TOKEN;
+      let phoneNumberId = creds.phoneNumberId || process.env.DEFAULT_PHONE_NUMBER_ID || '';
 
     if (token && token !== 'tu_token_de_acceso' && phoneNumberId) {
       try {
@@ -567,6 +657,17 @@ app.post('/api/conversations/:id/messages', authenticateToken, async (req: any, 
         });
         const metaData = await metaRes.json();
         console.log('Respuesta de Meta:', metaData);
+          if (metaData.error) {
+             return res.status(400).json({ error: 'Meta Error: ' + metaData.error.message });
+          }
+          if (metaData.messages && metaData.messages[0]) {
+             await prisma.message.update({
+               where: { id: savedMessage.id },
+               data: { metaMessageId: metaData.messages[0].id, status: 'SENT' }
+             });
+             io.emit('message_status_update', { id: savedMessage.id, metaMessageId: metaData.messages[0].id, status: 'SENT', conversationId: savedMessage.conversationId });
+          }
+
       } catch (err) {
         console.error('Error al enviar a Meta:', err);
       }
@@ -578,6 +679,213 @@ app.post('/api/conversations/:id/messages', authenticateToken, async (req: any, 
   }
 });
 
+
+
+
+// --- SYSTEM SETTINGS ---
+app.get('/api/settings', authenticateToken, async (req: any, res: any) => {
+  try {
+    let setting = await prisma.systemSetting.findUnique({ where: { id: 'default' } });
+    if (!setting) {
+      setting = await prisma.systemSetting.create({ data: { id: 'default', data: {} } });
+    }
+    res.json(setting.data);
+  } catch (error) {
+    res.status(500).json({ error: 'Error fetching settings' });
+  }
+});
+
+app.put('/api/settings', authenticateToken, async (req: any, res: any) => {
+  try {
+    const newData = req.body;
+    let setting = await prisma.systemSetting.findUnique({ where: { id: 'default' } });
+    
+    let mergedData = newData;
+    if (setting && setting.data) {
+      mergedData = { ...(setting.data as object), ...newData };
+    }
+
+    const updated = await prisma.systemSetting.upsert({
+      where: { id: 'default' },
+      update: { data: mergedData },
+      create: { id: 'default', data: mergedData }
+    });
+    res.json(updated.data);
+  } catch (error) {
+    res.status(500).json({ error: 'Error updating settings' });
+  }
+});
+
+// --- GESTION DE PLANTILLAS META ---
+app.get('/api/templates', authenticateToken, async (req: any, res: any) => {
+  try {
+    const templates = await prisma.metaTemplate.findMany({ orderBy: { createdAt: 'desc' } });
+    res.json(templates);
+  } catch (error) {
+    res.status(500).json({ error: 'Error fetching templates' });
+  }
+});
+
+
+app.get('/api/templates/sync', authenticateToken, async (req: any, res: any) => {
+  try {
+    const creds = await getMetaCredentials();
+    const wabaId = creds.wabaId;
+    if (!wabaId) return res.status(400).json({ error: 'Falta configurar WABA ID' });
+
+    const metaRes = await fetch(`https://graph.facebook.com/v17.0/${wabaId}/message_templates`, {
+      headers: { 'Authorization': `Bearer ${creds.whatsappToken}` }
+    });
+    
+    const data = await metaRes.json();
+    if (!metaRes.ok) throw new Error(data.error?.message);
+
+    const metaTemplates = data.data; // Lista de plantillas en FB
+
+    // Actualizar estados localmente
+    for (const mt of metaTemplates) {
+      await prisma.metaTemplate.updateMany({
+        where: { name: mt.name, language: mt.language },
+        data: { status: mt.status } // 'APPROVED', 'REJECTED', 'PENDING'
+      });
+    }
+
+    res.json({ success: true, count: metaTemplates.length });
+  } catch (error: any) {
+    res.status(500).json({ error: 'Error sync', details: error.message });
+  }
+});
+
+
+app.put('/api/templates/:id', authenticateToken, async (req: any, res: any) => {
+    try {
+      const { id } = req.params;
+      const { name, category, language, bodyText, variables, examples, submitToMeta } = req.body;
+      let status = 'LOCAL';
+
+      const existing = await prisma.metaTemplate.findUnique({ where: { id } });
+      if (!existing) return res.status(404).json({ error: 'Not found' });
+
+      if (submitToMeta) {
+        const creds = await getMetaCredentials();
+        const wabaId = creds.wabaId;
+        const token = creds.whatsappToken;
+        if (!wabaId || !token) return res.status(400).json({ error: 'Falta WABA ID o Token' });
+
+        const varNames = JSON.parse(variables || '[]');
+        const exampleValues = examples ? JSON.parse(examples) : [];
+        const componentPayload: any = { type: 'BODY', text: bodyText };
+        if (varNames.length > 0) {
+          componentPayload.example = {
+            body_text: [exampleValues.length === varNames.length ? exampleValues : varNames.map((_: any, i: number) => i === 0 ? 'Juan' : 'Impresora 3D')]
+          };
+        }
+
+        let url = `https://graph.facebook.com/v17.0/${wabaId}/message_templates`;
+        let payload: any = { name, category, components: [componentPayload], language };
+
+        if (existing.metaId) {
+          url = `https://graph.facebook.com/v17.0/${existing.metaId}`;
+          payload = { components: [componentPayload] };
+        }
+
+        const metaRes = await fetch(url, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await metaRes.json();
+        if (!metaRes.ok) return res.status(400).json({ error: 'Error de Meta', details: data });
+        status = 'PENDING';
+      }
+
+      const template = await prisma.metaTemplate.update({
+        where: { id },
+        data: { name, category, language, bodyText, variables, status }
+      });
+      res.json(template);
+    } catch (error: any) {
+      res.status(500).json({ error: 'Error updating template', details: error.message });
+    }
+  });
+
+app.delete('/api/templates/:id', authenticateToken, async (req: any, res: any) => {
+  try {
+    const { id } = req.params;
+    const template = await prisma.metaTemplate.findUnique({ where: { id } });
+    if (!template) return res.status(404).json({ error: 'Not found' });
+
+    // Intentar borrar de Meta
+    const creds = await getMetaCredentials();
+    if (creds.wabaId && creds.whatsappToken) {
+      await fetch(`https://graph.facebook.com/v17.0/${creds.wabaId}/message_templates?name=${template.name}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${creds.whatsappToken}` }
+      });
+    }
+
+    await prisma.metaTemplate.delete({ where: { id } });
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: 'Error deleting template' });
+  }
+});
+
+app.post('/api/templates', authenticateToken, async (req: any, res: any) => {
+  try {
+    const { name, category, language, bodyText, variables, examples, submitToMeta } = req.body;
+    
+    let metaId = null;
+    let status = 'LOCAL';
+
+    // Si el usuario quiere mandarla a Facebook para aprobacion
+    if (submitToMeta) {
+      const creds = await getMetaCredentials();
+      const wabaId = creds.wabaId;
+      const token = creds.whatsappToken;
+      
+      if (!wabaId || !token) {
+        return res.status(400).json({ error: 'Falta configurar WABA ID o Token en Configuración API' });
+      }
+      // Reemplazamos {{variable}} por {{1}}, {{2}} para el formato de Meta
+      let metaBodyText = bodyText;
+      const varNames = JSON.parse(variables || '[]');
+      varNames.forEach((v: string, i: number) => {
+        metaBodyText = metaBodyText.replace(`{{${v}}}`, `{{${i + 1}}}`);
+      });
+
+      const payload = {
+        name,
+        category,
+        components: [{ type: 'BODY', text: metaBodyText }],
+        language
+      };
+
+      const metaRes = await fetch(`https://graph.facebook.com/v17.0/${wabaId}/message_templates`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await metaRes.json();
+      if (!metaRes.ok) {
+        return res.status(400).json({ error: 'Error de Meta', details: data });
+      }
+      metaId = data.id;
+      status = 'PENDING';
+    }
+
+    const template = await prisma.metaTemplate.create({
+      data: { name, category, language, bodyText, variables, status, metaId }
+    });
+    res.json(template);
+  } catch (error: any) {
+    res.status(500).json({ error: 'Error creating template', details: error.message });
+  }
+});
 
 // --- FASE 1 & MULTI-NUMBER: ENDPOINTS DEL WEBHOOK DE META ---
 
@@ -598,6 +906,23 @@ app.post('/webhook/whatsapp', async (req, res) => {
     if (body.object === 'whatsapp_business_account') {
       for (const entry of body.entry) {
         for (const change of entry.changes) {
+          if (change.value && change.value.statuses) {
+            for (const statusObj of change.value.statuses) {
+              const messageId = statusObj.id;
+              const status = statusObj.status; // 'sent', 'delivered', 'read', 'failed'
+              if (messageId) {
+                const existingMessage = await prisma.message.findUnique({ where: { metaMessageId: messageId } });
+                if (existingMessage) {
+                  await prisma.message.update({
+                    where: { metaMessageId: messageId },
+                    data: { status: status.toUpperCase() }
+                  });
+                  io.emit('message_status_update', { id: existingMessage.id, metaMessageId: messageId, status: status.toUpperCase(), conversationId: existingMessage.conversationId });
+                }
+              }
+            }
+          }
+          
           if (change.value && change.value.messages) {
             
             // 1. Identificar la Linea receptora
@@ -722,17 +1047,18 @@ app.post('/webhook/whatsapp', async (req, res) => {
                });
             }
 
-            const savedMessage = await prisma.message.create({
-              data: {
-                conversationId: conversation.id,
-                senderType: 'CLIENT',
-                content: text,
-                mediaType: mediaType,
-                mediaUrl: mediaUrl,
-                metaMessageId: messageId,
-                status: 'RECEIVED'
-              }
-            });
+            const isEcho = messageObj.from !== phone;
+              const savedMessage = await prisma.message.create({
+                data: {
+                  conversationId: conversation.id,
+                  senderType: isEcho ? 'AGENT' : 'CLIENT',
+                  content: text,
+                  mediaType: mediaType,
+                  mediaUrl: mediaUrl,
+                  metaMessageId: messageId,
+                  status: isEcho ? 'SENT' : 'RECEIVED'
+                }
+              });
 
             io.emit('new_message', { ...savedMessage, conversationContext: conversation });
           }
@@ -799,6 +1125,25 @@ app.post('/api/backorders', authenticateToken, async (req: any, res: any) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Error creando pedido' });
+  }
+});
+
+
+// --- REPORTES DE PEDIDOS (BACKORDERS GLOBALES) ---
+app.get('/api/backorders', authenticateToken, async (req: any, res: any) => {
+  try {
+    const backorders = await prisma.backorder.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        contact: {
+          select: { name: true, phone: true }
+        }
+      }
+    });
+    res.json(backorders);
+  } catch (error) {
+    console.error('Error fetching backorders:', error);
+    res.status(500).json({ error: 'Error cargando backorders' });
   }
 });
 

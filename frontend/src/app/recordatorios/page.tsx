@@ -50,28 +50,7 @@ export default function RecordatoriosPage() {
   }, []);
 
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (reminders.length === 0) return;
-      const now = new Date();
-      const due = reminders.find(r => {
-        if (r.isCompleted) return false;
-        const rDate = new Date(r.scheduledFor);
-        return rDate <= now && !localStorage.getItem('alerted_' + r.id);
-      });
-      
-      if (due) {
-        localStorage.setItem('alerted_' + due.id, 'true');
-        setActiveAlert(due);
-        
-        // Reproducir sonido fuerte
-        const audio = new Audio(localStorage.getItem('alarmSound') || 'https://actions.google.com/sounds/v1/alarms/bugle_tune.ogg');
-        audio.play().catch(e => console.log('Autoplay bloqueado:', e));
-      }
-    }, 5000); // Check every 5 seconds
-
-    return () => clearInterval(interval);
-  }, [reminders]);
+  
 
   const fetchReminders = () => {
     fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/reminders`, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } })

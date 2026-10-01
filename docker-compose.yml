@@ -3,47 +3,47 @@ version: '3.8'
 services:
   db:
     image: postgres:15-alpine
-    container_name: horus_db
+    container_name: horus-db
+    restart: always
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: horustech_password
-      POSTGRES_DB: horustech_crm
-    volumes:
-      - ./data/postgres:/var/lib/postgresql/data
+      POSTGRES_USER: ${POSTGRES_USER:-horus}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-horuspassword}
+      POSTGRES_DB: ${POSTGRES_DB:-horuscrm}
     ports:
       - "5432:5432"
-    restart: unless-stopped
+    volumes:
+      - pgdata:/var/lib/postgresql/data
 
   backend:
-    build: 
+    build:
       context: ./backend
-      dockerfile: Dockerfile
-    container_name: horus_backend
+    container_name: horus-backend
+    restart: always
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-horus}:${POSTGRES_PASSWORD:-horuspassword}@db:5432/${POSTGRES_DB:-horuscrm}?schema=public
+      - PORT=3001
+      - JWT_SECRET=${JWT_SECRET:-horus_super_secret_key_2026}
+      # Las credenciales de Meta se manejan desde la UI y se guardan en BD, no es estrictamente necesario pasarlas por entorno,
+      # pero si tienes un ADMIN_USERNAME puedes ponerlo aquí.
     ports:
       - "3001:3001"
-    volumes:
-      - ./data/uploads:/app/uploads
-      - ./data/config:/app/config
-    environment:
-      - DATABASE_URL=postgresql://postgres:horustech_password@db:5432/horustech_crm?schema=public
-      - SETTINGS_PATH=/app/config/settings.json
-      - JWT_SECRET=supersecret123
-      - META_ACCESS_TOKEN=${META_ACCESS_TOKEN:-}
-      - META_PHONE_ID=${META_PHONE_ID:-}
-      - PORT=3001
-    restart: unless-stopped
     depends_on:
       - db
+    # Comando para migrar la BD la primera vez que arranca y luego iniciar
+    command: sh -c "npx prisma db push && npm start"
 
   frontend:
-    build: 
+    build:
       context: ./frontend
-      dockerfile: Dockerfile
-    container_name: horus_frontend
+      args:
+        # Se inyecta al compilar Next.js (debes cambiar esto en tu .env por la IP real del servidor)
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001}
+    container_name: horus-frontend
+    restart: always
     ports:
-      - "3002:3000"
-    environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:3001
-    restart: unless-stopped
+      - "3000:3000"
     depends_on:
       - backend
+
+volumes:
+  pgdata:

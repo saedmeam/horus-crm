@@ -32,6 +32,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     { name: 'Respuestas Rápidas', icon: require('lucide-react').MessageSquarePlus, href: '/admin/snippets', requiresAdmin: true },
     { name: 'Etapas Kanban', icon: require('lucide-react').LayoutDashboard, href: '/admin/kanban-settings', requiresAdmin: true },
     { name: 'Campos Contactos', icon: require('lucide-react').List, href: '/admin/contact-fields', requiresAdmin: true },
+    { name: 'Reporte Pedidos', icon: require('lucide-react').Package, href: '/admin/pedidos', requiresAdmin: true },
+    { name: 'Plantillas Meta', icon: require('lucide-react').FileText, href: '/admin/plantillas', requiresAdmin: true },
+    { name: 'Configuración API', icon: require('lucide-react').Globe, href: '/admin/configuracion', requiresAdmin: true },
   ];
 
   const navItems = allNavItems.filter(item => !item.requiresAdmin || isAdmin);

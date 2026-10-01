@@ -9,11 +9,14 @@ RUN npm install
 # Copiar el código fuente
 COPY . .
 
-# Construir la aplicación Next.js para producción
+# Construir la aplicación Next.js
+# ARG permite inyectar variables en tiempo de construcción si es necesario
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+
 RUN npm run build
 
-# Exponer el puerto
 EXPOSE 3000
 
-# Ejecutar el frontend
+# Iniciar Next.js en modo producción
 CMD ["npm", "start"]
