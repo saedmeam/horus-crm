@@ -109,7 +109,7 @@ const [showInfo, setShowInfo] = useState(false);
   const handleAssignTo = async (userId: string | null) => {
     if (!selectedChat) return;
     try {
-      const res = await fetch(`http://localhost:3001/api/conversations/${selectedChat.id}/assign`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}/api/conversations/${selectedChat.id}/assign`, {
         method: 'PUT',
         headers: { 
           'Authorization': 'Bearer ' + localStorage.getItem('token'),
@@ -155,7 +155,7 @@ const [showInfo, setShowInfo] = useState(false);
   }, [reminders]);
 
   const fetchReminders = () => {
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/reminders`, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } })
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`}/api/reminders`, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } })
       .then(res => {
         if(res.status === 401 || res.status === 403) {
             localStorage.removeItem('token');
@@ -172,7 +172,7 @@ const [showInfo, setShowInfo] = useState(false);
     if (!selectedChat?.contact?.id || !reminderDate || !reminderTime || !reminderNotes) return;
     try {
       const scheduledFor = new Date(`${reminderDate}T${reminderTime}`).toISOString();
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/reminders`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`}/api/reminders`, {
         method: 'POST',
         headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token'), 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -198,7 +198,7 @@ const [showInfo, setShowInfo] = useState(false);
     const handleSaveBackorder = async () => {
       if (!selectedChat || !boProductName) return;
       try {
-        const res = await fetch((process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001') + '/api/backorders', {
+        const res = await fetch((process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`) + '/api/backorders', {
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json',
@@ -217,7 +217,7 @@ const [showInfo, setShowInfo] = useState(false);
           setBoQuantity(1);
           setBoNotes('');
           
-          fetch((process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001') + '/api/contacts/' + selectedChat.contactId + '/backorders', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } })
+          fetch((process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`) + '/api/contacts/' + selectedChat.contactId + '/backorders', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } })
             .then(res => {
         if(res.status === 401 || res.status === 403) {
             localStorage.removeItem('token');
@@ -238,7 +238,7 @@ const [showInfo, setShowInfo] = useState(false);
 
   const handleCompleteReminder = async (id: string) => {
     try {
-      await fetch(`http://localhost:3001/api/reminders/${id}/complete`, {
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}/api/reminders/${id}/complete`, {
         method: 'PUT',
         headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
       });
@@ -251,7 +251,7 @@ const [showInfo, setShowInfo] = useState(false);
   const unreadChats = conversations.filter((c: any) => c._count?.messages > 0);
 
   const fetchConversations = () => {
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/settings`, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } })
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`}/api/settings`, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } })
       .then(res => {
         if(res.status === 401 || res.status === 403) {
             localStorage.removeItem('token');
@@ -262,7 +262,7 @@ const [showInfo, setShowInfo] = useState(false);
       })
       .then(data => setSnippets(data.snippets || []));
 
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/templates`, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } })
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`}/api/templates`, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } })
       .then(res => {
         if(res.status === 401 || res.status === 403) {
             localStorage.removeItem('token');
@@ -275,7 +275,7 @@ const [showInfo, setShowInfo] = useState(false);
          if(Array.isArray(data)) setMetaTemplates(data.filter((t: any) => t.status === 'APPROVED' || t.status === 'LOCAL'));
       }).catch(e => console.error("Error fetching templates", e));
 
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/conversations`, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } })
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`}/api/conversations?t=${Date.now()}`, { cache: 'no-store', headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } })
       .then(res => {
         if(res.status === 401 || res.status === 403) {
             localStorage.removeItem('token');
@@ -302,11 +302,11 @@ const [showInfo, setShowInfo] = useState(false);
       }
     }
 
-    const newSocket = io('http://localhost:3001');
+    const newSocket = io(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`);
     setSocket(newSocket);
     fetchConversations();
       fetchReminders();
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/users/agents`, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } }).then(res => {
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`}/api/users/agents`, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } }).then(res => {
         if(res.status === 401 || res.status === 403) {
             localStorage.removeItem('token');
             window.location.href = '/login';
@@ -346,52 +346,29 @@ const [showInfo, setShowInfo] = useState(false);
       });
       
       newSocket.on('new_message', (newMsg: any) => {
-        if (newMsg.senderType === 'CLIENT') {
-          try {
-            const audio = new Audio('/notification.mp3');
-            audio.play().catch(e => console.log('Audio auto-play blocked', e));
-          } catch(e) {}
-        }
+        
       // Filtrar mensajes que no pertenecen al usuario actual
       const ctx = newMsg.conversationContext;
-      if (ctx) {
-        const u = JSON.parse(localStorage.getItem('user') || '{}');
-        const myLineIds = u?.lines?.map((l: any) => l.id) || [];
-        
-        const isMine = ctx.assignedUserId === u?.id;
-        const isUnassignedButInMyLine = !ctx.assignedUserId && myLineIds.includes(ctx.whatsappLineId);
-        const isLegacy = !ctx.assignedUserId && !ctx.whatsappLineId;
-        
-        if (!isMine && !isUnassignedButInMyLine && !isLegacy) {
-          console.log('Ignorando mensaje, pertenece a otro agente o canal');
-          return;
-        }
-      }
-        if (newMsg.senderType === 'CLIENT' || newMsg.senderType === 'USER') {
-          try {
-            const audio = new Audio(localStorage.getItem('msgSound') || '/sounds/message.mp3');
-            audio.play().catch(e => console.log('Autoplay bloqueado:', e));
+          if (ctx) {
+            const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+            const canViewAll = currentUser?.roleData?.canViewAllChats === true || currentUser?.role?.name === 'SUPERADMIN' || currentUser?.role === 'SUPERADMIN';
             
-            if (Notification.permission === 'granted') {
-              const notif = new Notification('Horustech CRM', {
-                body: newMsg.content?.substring(0, 50) || 'Tienes un nuevo mensaje.',
-                icon: '/logo-icon.png'
-              });
-              notif.onclick = function() {
-                window.focus();
-                window.dispatchEvent(new CustomEvent('openChat', { detail: newMsg.conversationId }));
-              };
+            const myLineIds = currentUser?.lines?.map((l) => l.id) || [];
+            const isMine = ctx.assignedUserId === currentUser?.id;
+            const isUnassignedButInMyLine = !ctx.assignedUserId && myLineIds.includes(ctx.whatsappLineId);
+            const isLegacy = !ctx.assignedUserId && !ctx.whatsappLineId;
+            
+            if (!canViewAll && !isMine && !isUnassignedButInMyLine && !isLegacy) {
+              return;
             }
-          } catch (err) {
-            console.error('Error notificaciones:', err);
           }
-        }
+        
 
         setMessages(prev => {
           if (selectedChat && newMsg.conversationId === selectedChat.id) {
             // Mark as read immediately if chat is open
             if (newMsg.senderType === 'CLIENT') {
-               fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/conversations/` + newMsg.conversationId + '/read', { 
+               fetch(`${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`}/api/conversations/` + newMsg.conversationId + '/read', { 
                  method: 'PUT',
                  headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } 
                }).catch(e => {});
@@ -463,12 +440,12 @@ const [showInfo, setShowInfo] = useState(false);
     setConversations(prev => prev.map(c => c.id === chat.id ? { ...c, _count: { ...c._count, messages: 0 } } : c));
     
     // Mark as read in backend
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/conversations/` + chat.id + '/read', { 
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`}/api/conversations/` + chat.id + '/read', { 
       method: 'PUT',
       headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } 
     }).catch(e => console.error(e));
 
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/conversations/` + chat.id + '/messages', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } })
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`}/api/conversations/` + chat.id + `/messages?t=${Date.now()}`, { cache: 'no-store', headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } })
       .then(res => {
         if(res.status === 401 || res.status === 403) {
             localStorage.removeItem('token');
@@ -512,7 +489,7 @@ const [showInfo, setShowInfo] = useState(false);
     if (!selectedChat) return;
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`http://localhost:3001/api/conversations/${selectedChat.id}/template`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}/api/conversations/${selectedChat.id}/template`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ templateName: selectedTemplate })
@@ -550,7 +527,7 @@ const [showInfo, setShowInfo] = useState(false);
           const token = localStorage.getItem('token');
           
           try {
-            const uploadRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/upload`, {
+            const uploadRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`}/api/upload`, {
               method: 'POST',
               headers: { 'Authorization': `Bearer ${token}` },
               body: formData
@@ -564,7 +541,7 @@ const [showInfo, setShowInfo] = useState(false);
             }
             const { url } = await uploadRes.json();
             
-            await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/conversations/${selectedChat.id}/messages`, {
+            await fetch(`${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`}/api/conversations/${selectedChat.id}/messages`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
               body: JSON.stringify({ content: '🎙️ Nota de voz', mediaUrl: url, mediaType: 'AUDIO' })
@@ -613,7 +590,7 @@ const handleSelectMetaTemplate = (t: any) => {
 
   const executeSendTemplate = async (template: any, examples: string[]) => {
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/conversations/${selectedChat.id}/template`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`}/api/conversations/${selectedChat.id}/template`, {
         method: 'POST',
         headers: {
           'Authorization': 'Bearer ' + localStorage.getItem('token'),
@@ -660,7 +637,7 @@ const handleSelectMetaTemplate = (t: any) => {
 
     if (chatMode === 'NOTE') {
       try {
-        await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/conversations/` + selectedChat.id + '/comments', {
+        await fetch(`${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`}/api/conversations/` + selectedChat.id + '/comments', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -672,7 +649,7 @@ const handleSelectMetaTemplate = (t: any) => {
       return;
     }
 
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/conversations/` + selectedChat.id + '/messages', {
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`}/api/conversations/` + selectedChat.id + '/messages', {
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
         method: 'POST',
         body: JSON.stringify({ 
@@ -695,7 +672,7 @@ const handleSelectMetaTemplate = (t: any) => {
   const handleSaveContactInfo = async () => {
     if (!selectedChat) return;
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/contacts/` + selectedChat?.contact?.id, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`}/api/contacts/` + selectedChat?.contact?.id, {
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
         method: 'PUT',
       body: JSON.stringify({
@@ -1162,7 +1139,7 @@ const handleSelectMetaTemplate = (t: any) => {
     const formData = new FormData();
     formData.append('file', file);
     try {
-      const res = await fetch((process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001') + '/api/upload', {
+      const res = await fetch((process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`) + '/api/upload', {
         method: 'POST',
         headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') },
         body: formData

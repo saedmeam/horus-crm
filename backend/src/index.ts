@@ -215,7 +215,7 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     const token = jwt.sign(
-      { id: user.id, role: user.role, email: user.email },
+      { id: user.id, role: ((user as any).role?.name || (user as any).role), email: user.email },
       process.env.JWT_SECRET || 'secret',
       { expiresIn: '24h' }
     );
@@ -226,7 +226,7 @@ app.post('/api/auth/login', async (req, res) => {
         id: user.id,
         name: user.name,
         email: user.email,
-        role: user.role,
+        role: ((user as any).role?.name || (user as any).role),
         lines: user.lines
       }
     });
@@ -348,6 +348,7 @@ app.post('/api/conversations/:id/template', authenticateToken, async (req: any, 
         metaMessageId
       }
     });
+      await prisma.conversation.update({ where: { id: newMessage.conversationId }, data: { updatedAt: new Date() } }).catch(()=>{});
 
     io.emit('new_message', newMessage);
     res.json(newMessage);
@@ -416,7 +417,7 @@ app.get('/api/conversations', authenticateToken, async (req: any, res: any) => {
     // 2. Si NO está asignado a nadie, y pertenece a una de MIS líneas, lo veo.
     // 3. Si NO está asignado a nadie, y es un chat legacy (whatsappLineId nulo), lo veo temporalmente para no perder historial.
     
-      const isAdmin = user.role === 'SUPERADMIN' || user.role === 'ADMIN';
+      const isAdmin = ((user as any).role?.name || (user as any).role) === 'SUPERADMIN' || ((user as any).role?.name || (user as any).role) === 'ADMIN';
       const whereClause = isAdmin ? {} : {
         OR: [
           { assignedUserId: user.id },
@@ -577,8 +578,9 @@ app.post('/api/conversations/:id/messages', authenticateToken, async (req: any, 
         mediaType: mediaType || 'TEXT'
       }
     });
+      await prisma.conversation.update({ where: { id: savedMessage.conversationId }, data: { updatedAt: new Date() } }).catch(()=>{});
 
-    io.emit('new_message', { ...savedMessage, conversationContext: conversation });
+    io.emit('new_message', { ...savedMessage, contactName: (conversation as any).contact?.name || (undefined), phoneNumber: (conversation as any).contact?.phone || (undefined), conversationContext: conversation });
 
     const creds = await getMetaCredentials();
       const token = creds.whatsappToken || process.env.WHATSAPP_TOKEN;
@@ -1059,8 +1061,9 @@ app.post('/webhook/whatsapp', async (req, res) => {
                   status: isEcho ? 'SENT' : 'RECEIVED'
                 }
               });
+      await prisma.conversation.update({ where: { id: savedMessage.conversationId }, data: { updatedAt: new Date() } }).catch(()=>{});
 
-            io.emit('new_message', { ...savedMessage, conversationContext: conversation });
+            io.emit('new_message', { ...savedMessage, contactName: contact.name, phoneNumber: contact.phone, conversationContext: conversation });
           }
         }
       }
