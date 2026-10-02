@@ -1,5 +1,5 @@
 node_modules/
-# .env (Permitido por el usuario)
+.env
 .env.*
 !.env.example
 

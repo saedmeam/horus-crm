@@ -1,0 +1,13 @@
+[Unit]
+Description=ngrok tunnel Horustech CRM (backend)
+After=network-online.target docker.service
+Wants=network-online.target docker.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/ngrok http 4001
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

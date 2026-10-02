@@ -166,6 +166,16 @@ export default function GlobalAlerts() {
           }
         }
       });
+
+      socket.on('chat_assigned', (data: any) => {
+        const u = JSON.parse(localStorage.getItem('user') || '{}');
+        if (data.assignedUserId && data.assignedUserId === u.id) {
+          playMessageSound();
+          const t = { id: Date.now() + Math.random(), name: 'Chat asignado', text: 'Te asignaron un nuevo chat', conversationId: data.conversationId };
+          setMsgToasts(prev => [...prev.slice(-4), t]);
+          setTimeout(() => setMsgToasts(prev => prev.filter(x => x.id !== t.id)), 6000);
+        }
+      });
     }
 
     const onFocus = () => { document.title = 'Horustech CRM'; };

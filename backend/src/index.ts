@@ -210,9 +210,9 @@ app.post('/api/lines', authenticateToken, async (req: any, res: any) => {
     if (req.user.role !== 'SUPERADMIN' && req.user.role !== 'ADMIN') {
       return res.status(403).json({ error: 'No tienes permisos' });
     }
-    const { name, phoneNumberId } = req.body;
+    const { name, phoneNumberId, wabaId, token } = req.body;
     const newLine = await prisma.whatsAppLine.create({
-      data: { name, phoneNumberId, active: true }
+      data: { name, phoneNumberId, wabaId: wabaId || null, token: token || null, active: true }
     });
     res.json({ success: true, line: newLine });
   } catch (error: any) {
@@ -230,6 +230,29 @@ app.delete('/api/lines/:id', authenticateToken, async (req: any, res: any) => {
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: 'Error al eliminar el canal' });
+  }
+});
+
+// Editar línea (solo token, wabaId y active; nombre y phoneNumberId son fijos)
+app.put('/api/lines/:id', authenticateToken, async (req: any, res: any) => {
+  try {
+    if (req.user.role !== 'SUPERADMIN' && req.user.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'No tienes permisos' });
+    }
+    const { token, wabaId, active, phoneNumberId } = req.body;
+    const data: any = {};
+    if (token !== undefined) data.token = token || null;
+    if (wabaId !== undefined) data.wabaId = wabaId || null;
+    if (active !== undefined) data.active = !!active;
+    if (phoneNumberId !== undefined && String(phoneNumberId).trim() !== '') data.phoneNumberId = String(phoneNumberId).trim();
+
+    const line = await prisma.whatsAppLine.update({
+      where: { id: req.params.id },
+      data
+    });
+    res.json({ success: true, line });
+  } catch (error: any) {
+    res.status(500).json({ error: 'Error al actualizar el canal' });
   }
 });
 // Actualizar Usuario (Editar)
@@ -358,18 +381,12 @@ const fileFilter = (req: any, file: any, cb: any) => {
     'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4',
     'video/mp4', 'video/webm',
     'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    // Archivos 3D y médicos
-    'model/stl', 'application/sla', 'application/vnd.ms-pki.stl',
-    'model/obj', 'application/dicom', 'application/octet-stream'
+    'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
   ];
-  const allowedExtensions = ['.stl', '.obj', '.dcm', '.dicom'];
-  const ext = (file.originalname || '').toLowerCase();
-  const hasAllowedExt = allowedExtensions.some(e => ext.endsWith(e));
-  if (allowedMimes.includes(file.mimetype) || hasAllowedExt) {
+  if (allowedMimes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error('Formato de archivo no permitido. Solo imagenes, audios, videos, documentos y archivos 3D/DICOM.'));
+    cb(new Error('Formato de archivo no permitido. Solo imagenes, audios, videos y documentos.'));
   }
 };
 const upload = multer({ storage, fileFilter, limits: { fileSize: 20 * 1024 * 1024 } });
@@ -455,6 +472,29 @@ const getConversationTargetUserIds = async (conversationId: string) => {
     lineUsers.forEach((u: any) => ids.add(u.id));
   }
   return [...ids];
+};
+
+// Obtener un usuario del sistema (primer admin) para comentarios internos automáticos
+const getSystemUserId = async () => {
+  const admin = await prisma.user.findFirst({
+    where: { OR: [{ role: { name: 'SUPERADMIN' } }, { role: { name: 'ADMIN' } }] }
+  });
+  return admin?.id || null;
+};
+
+// Crear un comentario interno automático en una conversación
+const createAutoComment = async (conversationId: string, content: string) => {
+  try {
+    const authorId = await getSystemUserId();
+    if (!authorId) return;
+    const comment = await prisma.internalComment.create({
+      data: { conversationId, authorId, content, mentions: [] },
+      include: { author: true }
+    });
+    io.emit('new_message', { ...comment, isInternal: true, senderType: 'INTERNAL', senderName: comment.author?.name, conversationId });
+  } catch (e) {
+    console.error('Error creando comentario automático:', e);
+  }
 };
 
 // --- FASE 2: ENDPOINTS PARA LA INTERFAZ DEL CRM ---
@@ -793,7 +833,7 @@ app.post('/api/conversations/:id/messages', authenticateToken, async (req: any, 
 
     const conversation = await prisma.conversation.findUnique({
       where: { id },
-      include: { contact: true }
+      include: { contact: true, whatsappLine: true }
     });
     if (!conversation) return res.status(404).json({ error: 'Conversation not found' });
 
@@ -811,8 +851,8 @@ app.post('/api/conversations/:id/messages', authenticateToken, async (req: any, 
     io.emit('new_message', { ...savedMessage, contactName: (conversation as any).contact?.name || (undefined), phoneNumber: (conversation as any).contact?.phone || (undefined), conversationContext: conversation });
 
     const creds = await getMetaCredentials();
-      const token = creds.whatsappToken || process.env.WHATSAPP_TOKEN;
-      let phoneNumberId = creds.phoneNumberId || process.env.DEFAULT_PHONE_NUMBER_ID || '';
+      const token = (conversation as any).whatsappLine?.token || creds.whatsappToken || process.env.WHATSAPP_TOKEN;
+      let phoneNumberId = (conversation as any).whatsappLine?.phoneNumberId || creds.phoneNumberId || process.env.DEFAULT_PHONE_NUMBER_ID || '';
 
     if (token && token !== 'tu_token_de_acceso' && phoneNumberId) {
       try {
@@ -833,8 +873,6 @@ app.post('/api/conversations/:id/messages', authenticateToken, async (req: any, 
               if (mediaType === 'AUDIO') mimeType = 'audio/mp4';
               if (mediaType === 'VIDEO') mimeType = 'video/mp4';
               if (mediaType === 'DOCUMENT_PDF') mimeType = 'application/pdf';
-              if (mediaType === 'FILE_3D_STL') mimeType = 'model/stl';
-              if (mediaType === 'FILE_DICOM') mimeType = 'application/dicom';
               
               const fileBuffer = require('fs').readFileSync(localFilePath);
               const blob = new Blob([fileBuffer], { type: mimeType });
@@ -929,27 +967,44 @@ app.get('/api/templates', authenticateToken, async (req: any, res: any) => {
 app.get('/api/templates/sync', authenticateToken, async (req: any, res: any) => {
   try {
     const creds = await getMetaCredentials();
-    const wabaId = creds.wabaId;
-    if (!wabaId) return res.status(400).json({ error: 'Falta configurar WABA ID' });
+    const globalToken = creds.whatsappToken || process.env.WHATSAPP_TOKEN;
+    const globalWaba = creds.wabaId || '';
+    if (!globalToken) return res.status(400).json({ error: 'Falta configurar el Token de acceso' });
 
-    const metaRes = await fetch(`https://graph.facebook.com/v17.0/${wabaId}/message_templates`, {
-      headers: { 'Authorization': `Bearer ${creds.whatsappToken}` }
-    });
-    
-    const data = await metaRes.json();
-    if (!metaRes.ok) throw new Error(data.error?.message);
+    // Consultar la BD: obtener todos los canales (números)
+    const lines = await prisma.whatsAppLine.findMany();
+    const wabaTokens = new Map<string, string>();
+    for (const l of lines) {
+      const effectiveWaba = l.wabaId || globalWaba;
+      if (!effectiveWaba) continue;
+      if (!wabaTokens.has(effectiveWaba)) {
+        wabaTokens.set(effectiveWaba, l.token || globalToken);
+      }
+    }
+    // Si no hay líneas, usar el global
+    if (wabaTokens.size === 0 && globalWaba) wabaTokens.set(globalWaba, globalToken);
+    if (wabaTokens.size === 0) return res.status(400).json({ error: 'Falta configurar WABA ID' });
 
-    const metaTemplates = data.data; // Lista de plantillas en FB
-
-    // Actualizar estados localmente
-    for (const mt of metaTemplates) {
-      await prisma.metaTemplate.updateMany({
-        where: { name: mt.name, language: mt.language },
-        data: { status: mt.status } // 'APPROVED', 'REJECTED', 'PENDING'
+    let totalCount = 0;
+    for (const [wabaId, wabaToken] of wabaTokens.entries()) {
+      const metaRes = await fetch(`https://graph.facebook.com/v17.0/${wabaId}/message_templates`, {
+        headers: { 'Authorization': `Bearer ${wabaToken}` }
       });
+      const data = await metaRes.json();
+      if (!metaRes.ok) continue; // si una cuenta falla, continuar con las demás
+      const metaTemplates = data.data || [];
+
+      // Actualizar estados localmente
+      for (const mt of metaTemplates) {
+        await prisma.metaTemplate.updateMany({
+          where: { name: mt.name, language: mt.language },
+          data: { status: mt.status } // 'APPROVED', 'REJECTED', 'PENDING'
+        });
+      }
+      totalCount += metaTemplates.length;
     }
 
-    res.json({ success: true, count: metaTemplates.length });
+    res.json({ success: true, count: totalCount, wabaIds: [...wabaTokens.keys()] });
   } catch (error: any) {
     res.status(500).json({ error: 'Error sync', details: error.message });
   }
@@ -1199,9 +1254,6 @@ app.post('/webhook/whatsapp', async (req, res) => {
                   else if (mime.includes('mp4')) ext = '.mp4';
                   else if (mime.includes('pdf')) ext = '.pdf';
                   else if (mime.includes('word')) ext = '.docx';
-                  else if (mime.includes('stl') || mime.includes('sla')) ext = '.stl';
-                  else if (mime.includes('obj')) ext = '.obj';
-                  else if (mime.includes('dicom') || mime.includes('dcm')) ext = '.dcm';
 
                   const filename = Date.now() + '-' + mediaIdToDownload + ext;
                   const savePath = require('path').join(__dirname, '../uploads', filename);
@@ -1258,7 +1310,47 @@ app.post('/webhook/whatsapp', async (req, res) => {
             }
 
             const isEcho = messageObj.from !== phone;
-              const savedMessage = await prisma.message.create({
+
+            // Regla de 90 días (cartera): solo para mensajes entrantes de cliente
+            if (!isEcho) {
+              const now = new Date();
+              const prevIncoming = contact.lastIncomingAt ? new Date(contact.lastIncomingAt) : null;
+              const daysSince = prevIncoming ? (now.getTime() - prevIncoming.getTime()) / (24 * 60 * 60 * 1000) : null;
+              const isActivePortfolio = !!prevIncoming && daysSince !== null && daysSince <= 90;
+
+              // Actualizar la fecha de última interacción del contacto
+              await prisma.contact.update({ where: { id: contact.id }, data: { lastIncomingAt: now } }).catch(() => {});
+              contact.lastIncomingAt = now;
+
+              if (isActivePortfolio && contact.assignedUserId) {
+                // Cartera activa (≤ 90 días): asignar la conversación a su vendedor
+                const assignedUser = await prisma.user.findUnique({ where: { id: contact.assignedUserId } });
+                if (assignedUser && assignedUser.active && conversation.assignedUserId !== contact.assignedUserId) {
+                  conversation = await prisma.conversation.update({
+                    where: { id: conversation.id },
+                    data: { assignedUserId: contact.assignedUserId }
+                  });
+                  io.emit('chat_assigned', { conversationId: conversation.id, assignedUserId: contact.assignedUserId });
+                }
+              } else if (prevIncoming && !isActivePortfolio && contact.assignedUserId) {
+                // Cartera expirada (> 90 días): quitar el vendedor y volver el chat al pool
+                await prisma.contact.update({ where: { id: contact.id }, data: { assignedUserId: null } }).catch(() => {});
+                contact.assignedUserId = null;
+                if (conversation.assignedUserId) {
+                  conversation = await prisma.conversation.update({
+                    where: { id: conversation.id },
+                    data: { assignedUserId: null }
+                  });
+                  io.emit('chat_assigned', { conversationId: conversation.id, assignedUserId: null });
+                }
+                await createAutoComment(conversation.id, '🔄 Lead liberado al pool (cartera expirada > 90 días)');
+              } else if (!prevIncoming && !contact.assignedUserId && !conversation.assignedUserId) {
+                // Lead nuevo sin vendedor: avisar al equipo
+                await createAutoComment(conversation.id, '🆕 Nuevo lead sin asignar');
+              }
+            }
+
+            const savedMessage = await prisma.message.create({
                 data: {
                   conversationId: conversation.id,
                   senderType: isEcho ? 'AGENT' : 'CLIENT',
@@ -1335,7 +1427,61 @@ app.put('/api/contacts/:id', authenticateToken, async (req, res) => {
   }
 });
 
+// --- ETIQUETAS DE CONTACTOS (TAGS) ---
+app.get('/api/contacts/:id/tags', authenticateToken, async (req: any, res: any) => {
+  try {
+    const tags = await prisma.contactTag.findMany({ where: { contactId: req.params.id } });
+    res.json(tags);
+  } catch (e) {
+    res.status(500).json({ error: 'Error fetching tags' });
+  }
+});
 
+app.post('/api/contacts/:id/tags', authenticateToken, async (req: any, res: any) => {
+  try {
+    const { tagName } = req.body;
+    if (!tagName || !String(tagName).trim()) return res.status(400).json({ error: 'Nombre de etiqueta requerido' });
+    const tag = await prisma.contactTag.upsert({
+      where: { contactId_tagName: { contactId: req.params.id, tagName: String(tagName).trim() } },
+      update: {},
+      create: { contactId: req.params.id, tagName: String(tagName).trim() }
+    });
+    res.json(tag);
+  } catch (e) {
+    res.status(500).json({ error: 'Error adding tag' });
+  }
+});
+
+app.delete('/api/contacts/:id/tags/:tagName', authenticateToken, async (req: any, res: any) => {
+  try {
+    await prisma.contactTag.deleteMany({ where: { contactId: req.params.id, tagName: req.params.tagName } });
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Error deleting tag' });
+  }
+});
+
+// --- DASHBOARD DE MÉTRICAS ---
+app.get('/api/stats/dashboard', authenticateToken, async (req: any, res: any) => {
+  try {
+    const [contacts, conversations, messages, pendingReminders, backorders] = await Promise.all([
+      prisma.contact.count(),
+      prisma.conversation.count(),
+      prisma.message.count(),
+      prisma.reminder.count({ where: { isCompleted: false } }),
+      prisma.backorder.count()
+    ]);
+    const all = await prisma.conversation.findMany({ select: { stage: true } });
+    const stageCounts: Record<string, number> = {};
+    for (const c of all) {
+      stageCounts[c.stage] = (stageCounts[c.stage] || 0) + 1;
+    }
+    res.json({ contacts, conversations, messages, pendingReminders, backorders, stageCounts });
+  } catch (e) {
+    console.error('Error dashboard:', e);
+    res.status(500).json({ error: 'Error dashboard' });
+  }
+});
 
 // --- PEDIDOS (BACKORDERS) ---
 app.post('/api/backorders', authenticateToken, async (req: any, res: any) => {
@@ -1441,6 +1587,23 @@ app.put('/api/reminders/:id/complete', authenticateToken, async (req: any, res: 
     res.json(reminder);
   } catch (error) {
     res.status(500).json({ error: 'Error actualizando recordatorio' });
+  }
+});
+
+// Reporte de recordatorios (admin: todos los recordatorios con contacto y vendedor)
+app.get('/api/reminders/all', authenticateToken, async (req: any, res: any) => {
+  try {
+    if (req.user.role !== 'SUPERADMIN' && req.user.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'No tienes permisos' });
+    }
+    const reminders = await prisma.reminder.findMany({
+      include: { contact: true, user: true },
+      orderBy: { scheduledFor: 'desc' }
+    });
+    res.json(reminders);
+  } catch (error) {
+    console.error('Error cargando recordatorios:', error);
+    res.status(500).json({ error: 'Error cargando recordatorios' });
   }
 });
 

@@ -27,6 +27,8 @@ export default function ContactsPage() {
 
   
   const [globalFields, setGlobalFields] = useState<string[]>([]);
+  const [tags, setTags] = useState<any[]>([]);
+  const [newTag, setNewTag] = useState('');
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -93,6 +95,33 @@ export default function ContactsPage() {
     });
     setNewFieldKey('');
     setNewFieldValue('');
+    fetchTags(contact.id);
+  };
+
+  const fetchTags = async (contactId: string) => {
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}/api/contacts/${contactId}/tags`, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } });
+      if (res.ok) setTags(await res.json());
+    } catch (e) { console.error(e); }
+  };
+
+  const addTag = async () => {
+    if (!newTag.trim() || !editingContact) return;
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}/api/contacts/${editingContact.id}/tags`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
+      body: JSON.stringify({ tagName: newTag.trim() })
+    });
+    if (res.ok) { setNewTag(''); fetchTags(editingContact.id); }
+  };
+
+  const removeTag = async (tagName: string) => {
+    if (!editingContact) return;
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}/api/contacts/${editingContact.id}/tags/${encodeURIComponent(tagName)}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+    });
+    if (res.ok) fetchTags(editingContact.id);
   };
 
   const handleAddCustomField = () => {
@@ -306,6 +335,31 @@ export default function ContactsPage() {
                   {Object.keys(editForm.customFields).length === 0 && (
                     <p className="text-sm text-gray-400 dark:text-[#8696a0] italic">No hay campos adicionales.</p>
                   )}
+                </div>
+              </div>
+
+              {/* Etiquetas */}
+              <div className="mt-6 border-t border-gray-100 dark:border-[#2a3942] pt-6">
+                <h4 className="text-sm font-bold text-gray-800 dark:text-gray-100 mb-4">Etiquetas</h4>
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {tags.map(t => (
+                    <span key={t.id} className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium">
+                      {t.tagName}
+                      <button onClick={() => removeTag(t.tagName)} className="hover:text-red-600"><X className="w-3.5 h-3.5" /></button>
+                    </span>
+                  ))}
+                  {tags.length === 0 && <span className="text-sm text-gray-400 italic">Sin etiquetas.</span>}
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newTag}
+                    onChange={e => setNewTag(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addTag(); } }}
+                    placeholder="Nueva etiqueta (ej. Clínica, Ortodoncista)"
+                    className="flex-1 border border-gray-300 dark:border-[#374248] bg-gray-50 dark:bg-[#111b21] rounded-lg px-3 py-2 text-gray-800 dark:text-gray-200 outline-none focus:border-blue-500 text-sm"
+                  />
+                  <button onClick={addTag} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold flex items-center gap-1"><Plus className="w-4 h-4" /> Agregar</button>
                 </div>
               </div>
 

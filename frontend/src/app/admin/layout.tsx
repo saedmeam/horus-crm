@@ -26,6 +26,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const isAdmin = user.role === 'SUPERADMIN' || user.role === 'ADMIN';
 
   const allNavItems = [
+    { name: 'Dashboard', icon: require('lucide-react').BarChart3, href: '/admin/dashboard', requiresAdmin: true },
     { name: 'Notificaciones', icon: BellRing, href: '/admin/notificaciones', requiresAdmin: false },
     { name: 'Usuarios', icon: Users, href: '/admin/users', requiresAdmin: true },
     { name: 'Líneas WhatsApp', icon: Phone, href: '/admin/lines', requiresAdmin: true },
@@ -33,6 +34,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     { name: 'Etapas Kanban', icon: require('lucide-react').LayoutDashboard, href: '/admin/kanban-settings', requiresAdmin: true },
     { name: 'Campos Contactos', icon: require('lucide-react').List, href: '/admin/contact-fields', requiresAdmin: true },
     { name: 'Reporte Pedidos', icon: require('lucide-react').Package, href: '/admin/pedidos', requiresAdmin: true },
+    { name: 'Reporte Ventas', icon: require('lucide-react').TrendingUp, href: '/admin/ventas', requiresAdmin: true },
+    { name: 'Reporte Vendedor', icon: require('lucide-react').Users, href: '/admin/reporte-vendedor', requiresAdmin: true },
+    { name: 'Reporte Recordatorios', icon: require('lucide-react').AlarmClock, href: '/admin/recordatorios', requiresAdmin: true },
     { name: 'Plantillas Meta', icon: require('lucide-react').FileText, href: '/admin/plantillas', requiresAdmin: true },
     { name: 'Configuración API', icon: require('lucide-react').Globe, href: '/admin/configuracion', requiresAdmin: true },
   ];

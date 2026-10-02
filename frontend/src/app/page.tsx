@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { io, Socket } from 'socket.io-client';
 import MainSidebar from '@/components/MainSidebar';
 import { Toaster, toast } from 'react-hot-toast';
-import { Send, Paperclip, Mic, UserPlus, Search, Info, Moon, Sun, X, Save, Settings, Bell, AlarmClock, Check, MessageSquare, Reply, FileText, UserCircle, ShoppingCart, Box, CheckCheck } from 'lucide-react';
+import { Send, Paperclip, Mic, UserPlus, Search, Info, Moon, Sun, X, Save, Settings, Bell, AlarmClock, Check, MessageSquare, Reply, FileText, UserCircle, ShoppingCart, Box, CheckCheck, Download } from 'lucide-react';
 
 
 // Make sure X and FileText are imported, they are on line 6.
@@ -100,6 +100,25 @@ const [boNotes, setBoNotes] = useState('');
   }, [selectedChat]);
 
   const [darkMode, setDarkMode] = useState(false);
+  const [chatSearch, setChatSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL');
+
+  const exportConversation = () => {
+    if (!selectedChat || !messages.length) return;
+    const lines = messages.map((m: any) => {
+      const sender = m.isInternal ? (m.senderName || 'Comentario interno') : (m.senderType === 'CLIENT' ? 'Cliente' : 'Agente');
+      const time = new Date(m.createdAt).toLocaleString();
+      const text = m.content || (m.mediaUrl ? '[Archivo]' : '');
+      return `[${time}] ${sender}: ${text}`;
+    });
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `conversacion_${(selectedChat.contact?.name || selectedChat.contact?.phone || 'chat').replace(/[^a-z0-9]/gi, '_')}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   
   const [showTemplateModal, setShowTemplateModal] = useState(false);
@@ -842,8 +861,17 @@ const handleSelectMetaTemplate = (t: any) => {
               <input 
                 type="text" 
                 placeholder="Buscar contacto o chat..." 
+                value={chatSearch}
+                onChange={(e) => setChatSearch(e.target.value)}
                 className="w-full bg-gray-100 dark:bg-[#202c33] text-gray-800 dark:text-[#d1d7db] rounded-lg py-2 pl-10 pr-4 outline-none focus:ring-2 focus:ring-blue-300 dark:focus:ring-[#00a884] transition-colors duration-200 placeholder-gray-400 dark:placeholder-[#8696a0]"
               />
+            </div>
+            <div className="flex gap-2 mt-2 overflow-x-auto">
+              {['ALL', 'UNASSIGNED', 'OPEN', 'PENDING', 'CLOSED'].map(s => (
+                <button key={s} onClick={() => setStatusFilter(s)} className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${statusFilter === s ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 dark:bg-[#202c33] dark:text-[#aebac1]'}`}>
+                  {s === 'ALL' ? 'Todos' : s === 'UNASSIGNED' ? 'Sin asignar' : s === 'OPEN' ? 'Abiertos' : s === 'PENDING' ? 'Pendientes' : 'Cerrados'}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -851,7 +879,15 @@ const handleSelectMetaTemplate = (t: any) => {
             {conversations.length === 0 ? (
               <p className="text-center text-gray-400 dark:text-[#8696a0] mt-10 text-sm">No hay conversaciones</p>
             ) : (
-              (Array.isArray(conversations) ? conversations : []).map((chat) => (
+              (Array.isArray(conversations) ? conversations : [])
+                .filter((c: any) => {
+                  const name = (c.contact?.name || c.contact?.phone || '').toLowerCase();
+                  if (chatSearch && !name.includes(chatSearch.toLowerCase())) return false;
+                  if (statusFilter === 'UNASSIGNED' && c.assignedUserId) return false;
+                  if (statusFilter !== 'ALL' && statusFilter !== 'UNASSIGNED' && c.status !== statusFilter) return false;
+                  return true;
+                })
+                .map((chat) => (
                 <div 
                   key={chat.id} 
                   onClick={() => handleSelectChat(chat)}
@@ -909,6 +945,7 @@ const handleSelectMetaTemplate = (t: any) => {
                 </div>
                 
                 <div className="flex items-center gap-4">
+                    <button onClick={exportConversation} title="Exportar conversación" className="p-1.5 text-gray-500 dark:text-[#aebac1] hover:text-green-600 dark:hover:text-green-400 hover:bg-gray-100 dark:hover:bg-[#2a3942] rounded-full transition-colors"><Download className="w-5 h-5" /></button>
                     <button onClick={() => setShowBackorderModal(true)} title="Crear Pedido para este cliente" className="p-1.5 text-gray-500 dark:text-[#aebac1] hover:text-orange-600 dark:hover:text-orange-400 hover:bg-gray-100 dark:hover:bg-[#2a3942] rounded-full transition-colors"><ShoppingCart className="w-5 h-5" /></button>
                       <button 
                         onClick={() => setShowReminderModal(true)} 

@@ -71,6 +71,8 @@ model User {
 model WhatsAppLine {
   id               String          @id @default(uuid())
   phoneNumberId    String          @unique // El ID numérico de la API de Meta
+  wabaId           String?         // ID de la cuenta de WhatsApp Business (opcional, si usas varias cuentas)
+  token            String?         // Token de acceso específico de este número (opcional; vacío = usa el global)
   name             String          // Ej: 'Ventas 1', 'Soporte'
   active           Boolean         @default(true)
   createdAt        DateTime        @default(now())
