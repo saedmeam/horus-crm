@@ -23,25 +23,21 @@ services:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-horus}:${POSTGRES_PASSWORD:-horuspassword}@db:5432/${POSTGRES_DB:-horuscrm}?schema=public
       - PORT=3001
       - JWT_SECRET=${JWT_SECRET:-horus_super_secret_key_2026}
-      # Las credenciales de Meta se manejan desde la UI y se guardan en BD, no es estrictamente necesario pasarlas por entorno,
-      # pero si tienes un ADMIN_USERNAME puedes ponerlo aquí.
     ports:
-      - "3001:3001"
+      - "4001:3001"
     depends_on:
       - db
-    # Comando para migrar la BD la primera vez que arranca y luego iniciar
     command: sh -c "npx prisma db push && npm start"
 
   frontend:
     build:
       context: ./frontend
       args:
-        # Se inyecta al compilar Next.js (debes cambiar esto en tu .env por la IP real del servidor)
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4001}
     container_name: horus-frontend
     restart: always
     ports:
-      - "3000:3000"
+      - "4000:3002"
     depends_on:
       - backend
 

@@ -15,7 +15,7 @@ export default function ContactFieldsPage() {
 
   const fetchSettings = async () => {
     try {
-      const res = await fetch((process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001') + '/api/settings', {
+      const res = await fetch((process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`) + '/api/settings', {
         headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
       });
       if (res.ok) {
@@ -33,7 +33,7 @@ export default function ContactFieldsPage() {
   const saveSettings = async (updatedFields: string[]) => {
     try {
       const payload = { ...fullSettings, customContactFields: updatedFields };
-      const res = await fetch((process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001') + '/api/settings', {
+      const res = await fetch((process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`) + '/api/settings', {
         method: 'PUT',
         headers: { 
           'Content-Type': 'application/json',

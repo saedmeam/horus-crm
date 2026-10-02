@@ -45,7 +45,7 @@ export default function PlantillasAdminPage() {
 
   const fetchTemplates = async () => {
     try {
-      const res = await fetch('http://localhost:3001/api/templates', {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}/api/templates`, {
         headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
       });
       if (res.ok) setTemplates(await res.json());
@@ -57,7 +57,7 @@ export default function PlantillasAdminPage() {
   const handleSync = async () => {
     setSyncing(true);
     try {
-      const res = await fetch('http://localhost:3001/api/templates/sync', {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}/api/templates/sync`, {
         headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
       });
       if (res.ok) {
@@ -104,7 +104,7 @@ export default function PlantillasAdminPage() {
     setTemplateToDelete(null);
 
     try {
-      const res = await fetch('http://localhost:3001/api/templates/' + id, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}/api/templates/` + id, {
         method: 'DELETE',
         headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
       });
@@ -152,8 +152,8 @@ export default function PlantillasAdminPage() {
     const varsArray = Array.from({length: varCount}, (_, i) => String(i + 1));
 
     const url = editingId 
-      ? 'http://localhost:3001/api/templates/' + editingId 
-      : 'http://localhost:3001/api/templates';
+      ? `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}/api/templates/` + editingId 
+      : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}/api/templates`;
     
     const method = editingId ? 'PUT' : 'POST';
 

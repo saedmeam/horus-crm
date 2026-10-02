@@ -38,7 +38,7 @@ export default function RecordatoriosPage() {
     fetchReminders();
     fetchContacts();
 
-    const socket = io('http://localhost:3001');
+    const socket = io(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`);
     socket.on('new_reminder', (rem: any) => {
       const u = JSON.parse(localStorage.getItem('user') || '{}');
       if (rem.userId === u.id) {
@@ -53,14 +53,14 @@ export default function RecordatoriosPage() {
   
 
   const fetchReminders = () => {
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/reminders`, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } })
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`}/api/reminders`, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } })
       .then(res => res.json())
       .then(data => setReminders(data))
       .catch(e => console.error(e));
   };
 
   const fetchContacts = () => {
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/contacts`, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } })
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`}/api/contacts`, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } })
       .then(res => res.json())
       .then(data => setContacts(data))
       .catch(e => console.error(e));
@@ -70,7 +70,7 @@ export default function RecordatoriosPage() {
     if (!selectedContactId || !reminderDate || !reminderTime || !reminderNotes) return;
     try {
       const scheduledFor = new Date(`${reminderDate}T${reminderTime}`).toISOString();
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/reminders`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`}/api/reminders`, {
         method: 'POST',
         headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token'), 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -95,7 +95,7 @@ export default function RecordatoriosPage() {
 
   const handleCompleteReminder = async (id: string) => {
     try {
-      await fetch(`http://localhost:3001/api/reminders/${id}/complete`, {
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}/api/reminders/${id}/complete`, {
         method: 'PUT',
         headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
       });

@@ -27,8 +27,8 @@ export default function KanbanPage() {
   const fetchData = async () => {
     try {
       const [convRes, setRes] = await Promise.all([
-        fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/conversations`, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } }),
-        fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/settings`, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } })
+        fetch(`${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`}/api/conversations`, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } }),
+        fetch(`${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`}/api/settings`, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } })
       ]);
       if (convRes.ok && setRes.ok) {
         const [convData, setData] = await Promise.all([convRes.json(), setRes.json()]);
@@ -74,7 +74,7 @@ export default function KanbanPage() {
 
     // Update backend
     try {
-      await fetch(`http://localhost:3001/api/conversations/\${convId}/stage`, {
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}/api/conversations/\${convId}/stage`, {
         method: 'PUT',
         headers: { 
           'Content-Type': 'application/json',

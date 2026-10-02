@@ -18,7 +18,7 @@ export default function PedidosAdminPage() {
   const fetchBackorders = async () => {
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch('http://localhost:3001/api/backorders', {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}/api/backorders`, {
         headers: { 'Authorization': 'Bearer ' + token }
       });
       if (res.ok) {

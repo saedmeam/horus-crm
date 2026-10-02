@@ -42,7 +42,7 @@ export default function ContactsPage() {
 
   const fetchGlobalFields = async (token: string) => {
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/settings`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`}/api/settings`, {
         headers: { 'Authorization': 'Bearer ' + token }
       });
       if (res.ok) {
@@ -57,7 +57,7 @@ export default function ContactsPage() {
 
   const fetchContacts = async (token: string) => {
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/contacts`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`}/api/contacts`, {
         headers: { 'Authorization': 'Bearer ' + token }
       });
       if (res.ok) {
@@ -126,7 +126,7 @@ export default function ContactsPage() {
 
   const saveContact = async () => {
     try {
-      const res = await fetch(`http://localhost:3001/api/contacts/${editingContact.id}`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}/api/contacts/${editingContact.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

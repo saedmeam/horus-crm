@@ -4,6 +4,7 @@ import { Plus, Edit, Trash2 } from 'lucide-react';
 
 export default function UsersPage() {
   const [users, setUsers] = useState<any[]>([]);
+  const [roles, setRoles] = useState<any[]>([]);
   const [lines, setLines] = useState<any[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
@@ -14,19 +15,23 @@ export default function UsersPage() {
     username: '',
     email: '',
     password: '',
-    role: 'SALES',
+    role: '',
     lineIds: [] as string[]
   });
 
+  const fetchRoles = async () => {
+    const res = await fetch((process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001') + '/api/roles', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } });
+    if(res.ok) setRoles(await res.json());
+  };
   const fetchUsers = async () => {
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/users`, {
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`}/api/users`, {
       headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
     });
     if (res.ok) setUsers(await res.json());
   };
 
   const fetchLines = async () => {
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/lines`, {
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`}/api/lines`, {
       headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
     });
     if (res.ok) setLines(await res.json());
@@ -34,12 +39,13 @@ export default function UsersPage() {
 
   useEffect(() => {
     fetchUsers();
+    fetchRoles();
     fetchLines();
   }, []);
 
   const openCreate = () => {
     setEditingUserId(null);
-    setFormData({ name: '', username: '', email: '', password: '', role: 'SALES', lineIds: [] });
+    setFormData({ name: '', username: '', email: '', password: '', role: '', lineIds: [] });
     setShowModal(true);
   };
 
@@ -50,7 +56,7 @@ export default function UsersPage() {
       username: user.username || '',
       email: user.email,
       password: '', // Leave blank unless changing
-      role: user.role,
+      role: user.roleId || user.role?.id || '',
       lineIds: user.lines ? user.lines.map((l: any) => l.id) : []
     });
     setShowModal(true);
@@ -59,8 +65,8 @@ export default function UsersPage() {
   const handleSaveUser = async (e: React.FormEvent) => {
     e.preventDefault();
     const url = editingUserId 
-      ? `http://localhost:3001/api/users/${editingUserId}`
-      : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/users`;
+      ? `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}/api/users/${editingUserId}`
+      : `${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`}/api/users`;
       
     const method = editingUserId ? 'PUT' : 'POST';
 
@@ -132,7 +138,7 @@ export default function UsersPage() {
                     user.role === 'ADMIN' ? 'bg-indigo-100 text-indigo-800' :
                     'bg-green-100 text-green-800'
                   }`}>
-                    {user.role}
+                    {user.role?.name || user.role}
                   </span>
                 </td>
                 <td className="py-3 px-6 text-sm text-gray-600">
@@ -199,12 +205,11 @@ export default function UsersPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Rol de Sistema</label>
                   <select className="w-full px-3 py-2 border rounded-lg text-black focus:ring-2 focus:ring-blue-500 outline-none bg-white" value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})}>
-                    <option value="SALES">Ventas (SALES)</option>
-                    <option value="TECH">Soporte (TECH)</option>
-                    <option value="SUPERVISOR">Supervisor</option>
-                    <option value="ADMIN">Administrador</option>
-                    <option value="SUPERADMIN">Super Admin</option>
-                  </select>
+  <option value="">-- Seleccionar Rol --</option>
+  {roles.map((r: any) => (
+    <option key={r.id} value={r.id}>{r.name}</option>
+  ))}
+</select>
                 </div>
               </div>
 

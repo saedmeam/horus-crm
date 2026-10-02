@@ -60,7 +60,7 @@ export default function NotificacionesAdminPage() {
     formData.append('file', file);
 
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/upload`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`}/api/upload`, {
         method: 'POST',
         headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') },
         body: formData

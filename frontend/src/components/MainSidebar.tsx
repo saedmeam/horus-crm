@@ -31,7 +31,7 @@ export default function MainSidebar({ user }: { user: any }) {
 
   if (!user) user = {};
 
-  const isAdmin = user.role === 'SUPERADMIN' || user.role === 'ADMIN';
+  const isAdmin = user?.role === 'SUPERADMIN' || user?.role?.name === 'SUPERADMIN' || user?.roleData?.name === 'SUPERADMIN';
 
   const menuItems = [
     { name: 'Recordatorios', icon: AlarmClock, href: '/recordatorios' },
@@ -60,7 +60,7 @@ export default function MainSidebar({ user }: { user: any }) {
     }
 
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/users/me/password`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`}/api/users/me/password`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -95,7 +95,14 @@ export default function MainSidebar({ user }: { user: any }) {
         </div>
 
         <nav className="flex-1 w-full flex flex-col items-center space-y-4">
-          {menuItems.map((item) => {
+          {menuItems.filter(item => {
+              if (isAdmin) return true;
+              if (!user?.roleData?.screenAccess) {
+                 if (item.href.startsWith('/admin')) return false;
+                 return true;
+              }
+              return user.roleData.screenAccess.includes(item.href);
+            }).map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
             

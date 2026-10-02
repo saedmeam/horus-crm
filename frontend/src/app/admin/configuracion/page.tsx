@@ -20,7 +20,7 @@ export default function ConfiguracionAdminPage() {
 
   const fetchSettings = async () => {
     try {
-      const res = await fetch('http://localhost:3001/api/settings', {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}/api/meta-settings`, {
         headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
       });
       if (res.ok) {
@@ -43,7 +43,7 @@ export default function ConfiguracionAdminPage() {
     e.preventDefault();
     setSaving(true);
     try {
-      const res = await fetch('http://localhost:3001/api/settings', {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}/api/meta-settings`, {
         method: 'PUT',
         headers: { 
           'Content-Type': 'application/json',

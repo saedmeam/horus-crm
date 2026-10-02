@@ -202,7 +202,7 @@ app.post('/api/auth/login', async (req, res) => {
           { username: identifier }
         ]
       },
-      include: { lines: true, role: true }
+      include: { lines: true }
     });
     
     if (!user || !user.active) {
@@ -215,7 +215,7 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     const token = jwt.sign(
-      { id: user.id, role: (user as any).role?.name || 'SALES', roleData: (user as any).role, email: user.email },
+      { id: user.id, role: ((user as any).role?.name || (user as any).role), email: user.email },
       process.env.JWT_SECRET || 'secret',
       { expiresIn: '24h' }
     );
@@ -226,7 +226,7 @@ app.post('/api/auth/login', async (req, res) => {
         id: user.id,
         name: user.name,
         email: user.email,
-        role: (user as any).role?.name || 'SALES', roleData: (user as any).role,
+        role: ((user as any).role?.name || (user as any).role),
         lines: user.lines
       }
     });
@@ -237,7 +237,10 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.get('/api/auth/me', authenticateToken, async (req: any, res: any) => {
   try {
-    const user = await prisma.user.findUnique({ where: { id: req.user.id }, include: { lines: true, role: true } });
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      include: { lines: true }
+    });
     res.json(user);
   } catch (error) {
     res.status(500).json({ error: 'Error fetching user profile' });
@@ -375,51 +378,6 @@ app.put('/api/conversations/:id/assign', authenticateToken, async (req: any, res
   }
 });
 
-
-// --- ROLES ---
-app.get('/api/roles', authenticateToken, async (req, res) => {
-  try {
-    const roles = await prisma.role.findMany({ include: { _count: { select: { users: true } } } });
-    res.json(roles);
-  } catch (e) {
-    res.status(500).json({ error: 'Error fetching roles' });
-  }
-});
-
-app.post('/api/roles', authenticateToken, async (req, res) => {
-  try {
-    const { name, canViewAllChats, screenAccess } = req.body;
-    const role = await prisma.role.create({
-      data: { name, canViewAllChats, screenAccess }
-    });
-    res.json(role);
-  } catch (e) {
-    res.status(500).json({ error: 'Error creating role' });
-  }
-});
-
-app.put('/api/roles/:id', authenticateToken, async (req, res) => {
-  try {
-    const { name, canViewAllChats, screenAccess } = req.body;
-    const role = await prisma.role.update({
-      where: { id: req.params.id },
-      data: { name, canViewAllChats, screenAccess }
-    });
-    res.json(role);
-  } catch (e) {
-    res.status(500).json({ error: 'Error updating role' });
-  }
-});
-
-app.delete('/api/roles/:id', authenticateToken, async (req, res) => {
-  try {
-    await prisma.role.delete({ where: { id: req.params.id } });
-    res.json({ success: true });
-  } catch (e) {
-    res.status(500).json({ error: 'Error deleting role' });
-  }
-});
-
 // --- Conversation Routes ---
 
 app.get('/api/users/agents', authenticateToken, async (req: any, res: any) => {
@@ -445,7 +403,10 @@ app.post('/api/upload', authenticateToken, (req: any, res: any) => {
 
 app.get('/api/conversations', authenticateToken, async (req: any, res: any) => {
   try {
-    const user = await prisma.user.findUnique({ where: { id: req.user.id }, include: { lines: true, role: true } });
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      include: { lines: true }
+    });
     
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
 

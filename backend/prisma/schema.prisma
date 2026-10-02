@@ -9,12 +9,14 @@ generator client {
   provider = "prisma-client-js"
 }
 
-enum Role {
-  SUPERADMIN
-  ADMIN
-  SALES
-  TECH
-  SUPERVISOR
+model Role {
+  id              String   @id @default(uuid())
+  name            String   @unique
+  canViewAllChats Boolean  @default(false)
+  screenAccess    Json     @default("[]")
+  users           User[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
 enum ConversationStatus {
@@ -50,7 +52,8 @@ model User {
   username         String?         @unique
   email            String          @unique
   passwordHash     String
-  role             Role            @default(SALES)
+  roleId           String?
+  role             Role?    @relation(fields: [roleId], references: [id])
   active           Boolean         @default(true)
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt

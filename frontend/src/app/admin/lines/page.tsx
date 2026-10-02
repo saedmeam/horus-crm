@@ -13,7 +13,7 @@ export default function LinesPage() {
   });
 
   const fetchLines = async () => {
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/lines`, {
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`}/api/lines`, {
       headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
     });
     if (res.ok) setLines(await res.json());
@@ -25,7 +25,7 @@ export default function LinesPage() {
 
   const handleCreateLine = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/lines`, {
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`}/api/lines`, {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
@@ -46,7 +46,7 @@ export default function LinesPage() {
 
   const handleDelete = async (id: string) => {
     if (!confirm('¿Estás seguro de eliminar este canal? Se perderá la vinculación.')) return;
-    const res = await fetch(`http://localhost:3001/api/lines/${id}`, {
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}/api/lines/${id}`, {
       method: 'DELETE',
       headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
     });

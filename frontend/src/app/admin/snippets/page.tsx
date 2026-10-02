@@ -19,7 +19,7 @@ export default function SnippetsPage() {
 
   const fetchSettings = async () => {
     try {
-      const res = await fetch((process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001') + '/api/settings', {
+      const res = await fetch((process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`) + '/api/settings', {
         headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
       });
       if (res.ok) {
@@ -37,7 +37,7 @@ export default function SnippetsPage() {
   const saveSettings = async (updatedSnippets: any[]) => {
     try {
       const payload = { ...fullSettings, snippets: updatedSnippets };
-      const res = await fetch((process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001') + '/api/settings', {
+      const res = await fetch((process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`) + '/api/settings', {
         method: 'PUT',
         headers: { 
           'Content-Type': 'application/json',
@@ -62,7 +62,7 @@ export default function SnippetsPage() {
     formData.append('file', file);
 
     try {
-      const res = await fetch((process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001') + '/api/upload', {
+      const res = await fetch((process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`) + '/api/upload', {
         method: 'POST',
         headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') },
         body: formData
