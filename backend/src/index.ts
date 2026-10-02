@@ -9,6 +9,7 @@ import fs from 'fs';
 import { PrismaClient, ConversationStatus, SenderType } from '@prisma/client';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
+import { setVapidDetails, sendNotification } from 'web-push';
 
 dotenv.config();
 
@@ -23,6 +24,13 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 const prisma = new PrismaClient();
+
+// Web Push (notificaciones con la pestaña cerrada)
+const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || '';
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || '';
+if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
+  setVapidDetails('mailto:admin@horustech.com', VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+}
 
 const getMetaCredentials = async () => {
   const setting = await prisma.systemSetting.findUnique({ where: { id: 'default' } });
@@ -84,6 +92,40 @@ app.put('/api/meta-settings', authenticateToken, async (req: any, res: any) => {
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Error saving meta settings' });
+  }
+});
+
+// --- WEB PUSH (Service Worker) ---
+app.get('/api/push/vapid-public-key', authenticateToken, (req: any, res: any) => {
+  res.json({ publicKey: VAPID_PUBLIC_KEY });
+});
+
+app.post('/api/push/subscribe', authenticateToken, async (req: any, res: any) => {
+  try {
+    const { endpoint, keys } = req.body;
+    if (!endpoint || !keys?.p256dh || !keys?.auth) {
+      return res.status(400).json({ error: 'Datos de suscripción inválidos' });
+    }
+    const sub = await prisma.pushSubscription.upsert({
+      where: { endpoint },
+      update: { userId: req.user.id, p256dh: keys.p256dh, auth: keys.auth },
+      create: { endpoint, userId: req.user.id, p256dh: keys.p256dh, auth: keys.auth }
+    });
+    res.json({ success: true, id: sub.id });
+  } catch (e) {
+    res.status(500).json({ error: 'Error guardando suscripción' });
+  }
+});
+
+app.post('/api/push/unsubscribe', authenticateToken, async (req: any, res: any) => {
+  try {
+    const { endpoint } = req.body;
+    if (endpoint) {
+      await prisma.pushSubscription.deleteMany({ where: { endpoint, userId: req.user.id } });
+    }
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Error eliminando suscripción' });
   }
 });
 
@@ -315,9 +357,76 @@ const upload = multer({ storage, fileFilter, limits: { fileSize: 20 * 1024 * 102
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 app.use('/media', express.static(uploadDir));
 
-io.on('connection', (socket) => {
-  console.log('Frontend conectado:', socket.id);
+// Seguimiento de conexiones por usuario (para evitar notificaciones duplicadas)
+const connectedUsers = new Map<string, Set<string>>();
+
+io.use((socket: any, next: any) => {
+  const token = socket.handshake?.auth?.token;
+  if (!token) return next();
+  try {
+    const user: any = jwt.verify(token, process.env.JWT_SECRET || 'secret');
+    socket.data.userId = user.id;
+  } catch (e) {}
+  next();
 });
+
+io.on('connection', (socket: any) => {
+  const userId = socket.data?.userId;
+  if (userId) {
+    if (!connectedUsers.has(userId)) connectedUsers.set(userId, new Set());
+    connectedUsers.get(userId)!.add(socket.id);
+  }
+  console.log('Frontend conectado:', socket.id, userId ? `(user ${userId})` : '');
+  socket.on('disconnect', () => {
+    if (userId) {
+      const set = connectedUsers.get(userId);
+      if (set) {
+        set.delete(socket.id);
+        if (set.size === 0) connectedUsers.delete(userId);
+      }
+    }
+  });
+});
+
+const isUserConnected = (userId: string) => {
+  const set = connectedUsers.get(userId);
+  return !!set && set.size > 0;
+};
+
+const sendPushToUser = async (userId: string, payload: any) => {
+  if (isUserConnected(userId)) return;
+  const subs = await prisma.pushSubscription.findMany({ where: { userId } });
+  for (const sub of subs) {
+    try {
+      await sendNotification(
+        { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+        JSON.stringify(payload)
+      );
+    } catch (e: any) {
+      if (e?.statusCode === 404 || e?.statusCode === 410) {
+        await prisma.pushSubscription.delete({ where: { id: sub.id } }).catch(() => {});
+      }
+    }
+  }
+};
+
+const getConversationTargetUserIds = async (conversationId: string) => {
+  const conversation = await prisma.conversation.findUnique({ where: { id: conversationId } });
+  if (!conversation) return [];
+  const admins = await prisma.user.findMany({
+    where: { OR: [{ role: { name: 'SUPERADMIN' } }, { role: { name: 'ADMIN' } }] }
+  });
+  const ids = new Set(admins.map((u: any) => u.id));
+  if (conversation.assignedUserId) {
+    ids.add(conversation.assignedUserId);
+  } else if (conversation.whatsappLineId) {
+    const lineUsers = await prisma.user.findMany({
+      where: { lines: { some: { id: conversation.whatsappLineId } } }
+    });
+    lineUsers.forEach((u: any) => ids.add(u.id));
+  }
+  return [...ids];
+};
 
 // --- FASE 2: ENDPOINTS PARA LA INTERFAZ DEL CRM ---
 
@@ -1124,6 +1233,21 @@ app.post('/webhook/whatsapp', async (req, res) => {
       await prisma.conversation.update({ where: { id: savedMessage.conversationId }, data: { updatedAt: new Date() } }).catch(()=>{});
 
             io.emit('new_message', { ...savedMessage, contactName: contact.name, phoneNumber: contact.phone, conversationContext: conversation });
+
+            // Notificación push (Web Push) para usuarios NO conectados por socket
+            if (!isEcho) {
+              const targetIds = await getConversationTargetUserIds(conversation.id);
+              const pushPayload = {
+                title: `Mensaje de ${contact.name || phone}`,
+                body: (text || 'Nuevo mensaje').substring(0, 120),
+                icon: '/logo-icon.png',
+                tag: conversation.id,
+                conversationId: conversation.id
+              };
+              for (const uid of targetIds) {
+                await sendPushToUser(uid, pushPayload);
+              }
+            }
           }
         }
       }

@@ -26,6 +26,8 @@ services:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-horus}:${POSTGRES_PASSWORD:-horuspassword}@db:5432/${POSTGRES_DB:-horuscrm}?schema=public
       - PORT=3001
       - JWT_SECRET=${JWT_SECRET:-horus_super_secret_key_2026}
+      - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY:-BFvKHN15VTsqkPFNmIy13bcAIziXgf_H4ZaEngFBml3mBSXC-Vy7-NR79lv1JwW0slcKYlERjnOZgPsHnXfd94w}
+      - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY:-6_Qirt-gYtl5NxHLC_ofY19Dwc1-YYZXtqctMSK-3PM}
       - WHATSAPP_VERIFY_TOKEN=${WHATSAPP_VERIFY_TOKEN:-mi_token_secreto_horustech}
       - DEFAULT_PHONE_NUMBER_ID=${DEFAULT_PHONE_NUMBER_ID:-}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@horustech.com}

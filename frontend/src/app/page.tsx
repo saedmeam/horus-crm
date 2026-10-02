@@ -302,7 +302,7 @@ const [showInfo, setShowInfo] = useState(false);
       }
     }
 
-    const newSocket = io(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`);
+    const newSocket = io(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`, { auth: { token } });
     setSocket(newSocket);
     fetchConversations();
       fetchReminders();
@@ -402,24 +402,6 @@ const [showInfo, setShowInfo] = useState(false);
 
   useEffect(() => {
     const handleOpenChatEvent = (e: any) => {
-      const chatToOpen = conversations.find(c => c.id === e.detail);
-      if (chatToOpen) handleSelectChat(chatToOpen);
-    };
-    window.addEventListener('openChat', handleOpenChatEvent);
-    return () => window.removeEventListener('openChat', handleOpenChatEvent);
-  }, [conversations]);
-
-  useEffect(() => {
-    const handleOpenChatEvent = (e: any) => {
-      const chatToOpen = conversations.find((c: any) => c.id === e.detail);
-      if (chatToOpen) handleSelectChat(chatToOpen);
-    };
-    window.addEventListener('openChat', handleOpenChatEvent);
-    return () => window.removeEventListener('openChat', handleOpenChatEvent);
-  }, [conversations]);
-
-  useEffect(() => {
-    const handleOpenChatEvent = (e: any) => {
       const chatToOpen = conversations.find((c: any) => c.id === e.detail);
       if (chatToOpen) handleSelectChat(chatToOpen);
     };
@@ -456,6 +438,21 @@ const [showInfo, setShowInfo] = useState(false);
       })
       .then(data => setMessages(data));
   };
+
+  // Abrir la conversación indicada por ?chat=... al cargar (para notificaciones nativas)
+  useEffect(() => {
+    if (conversations.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const chatId = params.get('chat');
+    if (!chatId) return;
+    const target = conversations.find((c: any) => c.id === chatId);
+    if (target) {
+      handleSelectChat(target);
+      const url = new URL(window.location.href);
+      url.searchParams.delete('chat');
+      window.history.replaceState({}, '', url.toString());
+    }
+  }, [conversations]);
 
     const handleInputChange = (e: any) => {
       const val = e.target.value;

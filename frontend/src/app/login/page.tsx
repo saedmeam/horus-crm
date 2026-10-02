@@ -30,6 +30,7 @@ export default function LoginPage() {
       // Guardar token y datos del usuario
       localStorage.setItem('token', data.token);
       localStorage.setItem('user', JSON.stringify(data.user));
+      window.dispatchEvent(new Event('crm-login'));
       
       // Redirigir al dashboard principal
       router.push('/');

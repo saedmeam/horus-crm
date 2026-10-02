@@ -64,6 +64,8 @@ model User {
   reminders        Reminder[]
   internalComments InternalComment[]
   messages         Message[]
+  pushSubscriptions PushSubscription[]
+
 }
 
 model WhatsAppLine {
@@ -194,4 +196,14 @@ model MetaTemplate {
   metaId       String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+model PushSubscription {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
 }
