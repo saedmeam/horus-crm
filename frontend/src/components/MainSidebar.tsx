@@ -31,7 +31,7 @@ export default function MainSidebar({ user }: { user: any }) {
 
   if (!user) user = {};
 
-  const isAdmin = user?.role === 'SUPERADMIN' || user?.role?.name === 'SUPERADMIN' || user?.roleData?.name === 'SUPERADMIN';
+  const isAdmin = user?.role === 'SUPERADMIN' || user?.role?.name === 'SUPERADMIN' || user?.roleData?.name === 'SUPERADMIN' || user?.role === 'ADMIN' || user?.role?.name === 'ADMIN' || user?.roleData?.name === 'ADMIN';
 
   const menuItems = [
     { name: 'Recordatorios', icon: AlarmClock, href: '/recordatorios' },

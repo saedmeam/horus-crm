@@ -351,7 +351,7 @@ const [showInfo, setShowInfo] = useState(false);
       const ctx = newMsg.conversationContext;
           if (ctx) {
             const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
-            const canViewAll = currentUser?.roleData?.canViewAllChats === true || currentUser?.role?.name === 'SUPERADMIN' || currentUser?.role === 'SUPERADMIN';
+            const canViewAll = currentUser?.roleData?.canViewAllChats === true || currentUser?.role?.name === 'SUPERADMIN' || currentUser?.role === 'SUPERADMIN' || currentUser?.role?.name === 'ADMIN' || currentUser?.role === 'ADMIN';
             
             const myLineIds = currentUser?.lines?.map((l) => l.id) || [];
             const isMine = ctx.assignedUserId === currentUser?.id;

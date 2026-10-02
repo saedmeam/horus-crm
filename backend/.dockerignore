@@ -2,3 +2,12 @@ node_modules
 dist
 .env
 *.log
+.agents
+.claude
+.cursor
+.devin
+check_*.js
+test_*.js
+patch*.js
+fix_*.js
+dump.js

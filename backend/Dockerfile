@@ -2,9 +2,9 @@ FROM node:20
 
 WORKDIR /app
 
-# Instalar dependencias
+# Instalar dependencias (reproducible con lockfile)
 COPY package*.json ./
-RUN npm install
+RUN npm ci
 
 # Copiar el esquema de Prisma y generar el cliente
 COPY prisma ./prisma/

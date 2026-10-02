@@ -49,6 +49,44 @@ const authenticateToken = (req: any, res: any, next: any) => {
   });
 };
 
+// --- Configuración de credenciales Meta (Tokens) ---
+app.get('/api/meta-settings', authenticateToken, async (req: any, res: any) => {
+  try {
+    if (req.user.role !== 'SUPERADMIN' && req.user.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'No tienes permisos' });
+    }
+    const setting = await prisma.systemSetting.findUnique({ where: { id: 'default' } });
+    const data: any = setting?.data || {};
+    res.json({
+      WHATSAPP_TOKEN: data.WHATSAPP_TOKEN || '',
+      WHATSAPP_VERIFY_TOKEN: data.WHATSAPP_VERIFY_TOKEN || '',
+      WABA_ID: data.WABA_ID || '',
+      DEFAULT_PHONE_NUMBER_ID: data.DEFAULT_PHONE_NUMBER_ID || ''
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error fetching meta settings' });
+  }
+});
+
+app.put('/api/meta-settings', authenticateToken, async (req: any, res: any) => {
+  try {
+    if (req.user.role !== 'SUPERADMIN' && req.user.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'No tienes permisos' });
+    }
+    const setting = await prisma.systemSetting.findUnique({ where: { id: 'default' } });
+    const current: any = setting?.data || {};
+    const next = { ...current, ...req.body };
+    await prisma.systemSetting.upsert({
+      where: { id: 'default' },
+      update: { data: next },
+      create: { id: 'default', data: next }
+    });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Error saving meta settings' });
+  }
+});
+
 // --- Admin / User Management Routes ---
 
 // Listar todos los usuarios (Solo SUPERADMIN o ADMIN)
@@ -78,13 +116,16 @@ app.post('/api/users', authenticateToken, async (req: any, res: any) => {
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(password, salt);
 
+    // `role` llega como ID del rol (o vacío si no se asigna). El esquema usa la relación `roleId`.
+    const roleId = role && String(role).trim() !== '' ? role : null;
+
     const newUser = await prisma.user.create({
       data: {
         name,
         username,
         email,
         passwordHash,
-        role: role || 'SALES',
+        roleId,
         lines: {
           connect: lineIds ? lineIds.map((id: string) => ({ id })) : []
         }
@@ -147,11 +188,15 @@ app.put('/api/users/:id', authenticateToken, async (req: any, res: any) => {
       name,
       username,
       email,
-      role,
       lines: {
         set: lineIds ? lineIds.map((id: string) => ({ id })) : []
       }
     };
+
+    // `role` llega como ID del rol. Solo se actualiza si viene en el body.
+    if (role !== undefined) {
+      updateData.roleId = role && String(role).trim() !== '' ? role : null;
+    }
 
     if (password && password.trim() !== '') {
       const salt = await bcrypt.genSalt(10);
@@ -319,12 +364,18 @@ app.post('/api/conversations/:id/template', authenticateToken, async (req: any, 
     }
 
     // Llamada a WhatsApp API
+    const creds = await getMetaCredentials();
+    const token = creds.whatsappToken || process.env.WHATSAPP_TOKEN;
+    const phoneNumberId = creds.phoneNumberId || process.env.DEFAULT_PHONE_NUMBER_ID || '';
+    if (!token || !phoneNumberId) {
+      return res.status(400).json({ error: 'Falta configurar Token o Phone Number ID en Configuración API' });
+    }
     const metaRes = await fetch(
-      `https://graph.facebook.com/v17.0/${process.env.META_PHONE_ID}/messages`,
+      `https://graph.facebook.com/v17.0/${phoneNumberId}/messages`,
       {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${process.env.WHATSAPP_TOKEN}`,
+          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(metaPayload)
@@ -723,40 +774,6 @@ app.post('/api/conversations/:id/messages', authenticateToken, async (req: any, 
 
 
 
-// --- SYSTEM SETTINGS ---
-app.get('/api/settings', authenticateToken, async (req: any, res: any) => {
-  try {
-    let setting = await prisma.systemSetting.findUnique({ where: { id: 'default' } });
-    if (!setting) {
-      setting = await prisma.systemSetting.create({ data: { id: 'default', data: {} } });
-    }
-    res.json(setting.data);
-  } catch (error) {
-    res.status(500).json({ error: 'Error fetching settings' });
-  }
-});
-
-app.put('/api/settings', authenticateToken, async (req: any, res: any) => {
-  try {
-    const newData = req.body;
-    let setting = await prisma.systemSetting.findUnique({ where: { id: 'default' } });
-    
-    let mergedData = newData;
-    if (setting && setting.data) {
-      mergedData = { ...(setting.data as object), ...newData };
-    }
-
-    const updated = await prisma.systemSetting.upsert({
-      where: { id: 'default' },
-      update: { data: mergedData },
-      create: { id: 'default', data: mergedData }
-    });
-    res.json(updated.data);
-  } catch (error) {
-    res.status(500).json({ error: 'Error updating settings' });
-  }
-});
-
 // --- GESTION DE PLANTILLAS META ---
 app.get('/api/templates', authenticateToken, async (req: any, res: any) => {
   try {
@@ -930,11 +947,13 @@ app.post('/api/templates', authenticateToken, async (req: any, res: any) => {
 
 // --- FASE 1 & MULTI-NUMBER: ENDPOINTS DEL WEBHOOK DE META ---
 
-app.get('/webhook/whatsapp', (req, res) => {
+app.get('/webhook/whatsapp', async (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
-  if (mode === 'subscribe' && token === process.env.WHATSAPP_VERIFY_TOKEN) {
+  const creds = await getMetaCredentials();
+  const verifyToken = creds.verifyToken || process.env.WHATSAPP_VERIFY_TOKEN;
+  if (mode === 'subscribe' && verifyToken && token === verifyToken) {
     res.status(200).send(challenge);
   } else {
     res.sendStatus(403);
@@ -944,6 +963,8 @@ app.get('/webhook/whatsapp', (req, res) => {
 app.post('/webhook/whatsapp', async (req, res) => {
   try {
     const body = req.body;
+    const metaCreds = await getMetaCredentials();
+    const metaToken = metaCreds.whatsappToken || process.env.WHATSAPP_TOKEN;
     if (body.object === 'whatsapp_business_account') {
       for (const entry of body.entry) {
         for (const change of entry.changes) {
@@ -1008,18 +1029,18 @@ app.post('/webhook/whatsapp', async (req, res) => {
               text = '[Mensaje no soportado]';
             }
 
-            if (mediaIdToDownload && process.env.WHATSAPP_TOKEN) {
+            if (mediaIdToDownload && metaToken) {
               try {
                 // 1. Obtener la URL del media
                 const mediaMetaRes = await fetch("https://graph.facebook.com/v19.0/" + mediaIdToDownload, {
-                  headers: { 'Authorization': "Bearer " + process.env.WHATSAPP_TOKEN }
+                  headers: { 'Authorization': "Bearer " + metaToken }
                 });
                 const mediaMeta = await mediaMetaRes.json();
                 
                 if (mediaMeta.url) {
                   // 2. Descargar el archivo binario
                   const fileRes = await fetch(mediaMeta.url, {
-                    headers: { 'Authorization': "Bearer " + process.env.WHATSAPP_TOKEN }
+                    headers: { 'Authorization': "Bearer " + metaToken }
                   });
                   const arrayBuf = await fileRes.arrayBuffer();
                   const buffer = Buffer.from(arrayBuf);
@@ -1259,8 +1280,6 @@ app.put('/api/reminders/:id/complete', authenticateToken, async (req: any, res: 
 
 
 // --- SYSTEM SETTINGS (JSON FILE) ---
-const settingsFile = process.env.SETTINGS_PATH || require('path').join(__dirname, '..', 'settings.json');
-
 
 const defaultStages = [
   { id: 'NUEVO_LEAD', name: 'Nuevo Lead', color: '#3b82f6' },
@@ -1291,18 +1310,22 @@ const saveSettings = async (data: any) => {
 };
 
 app.get('/api/settings', authenticateToken, async (req: any, res: any) => {
-  res.json(await getSettings());
+  try {
+    res.json(await getSettings());
+  } catch (error) {
+    res.status(500).json({ error: 'Error fetching settings' });
+  }
 });
 
 app.put('/api/settings', authenticateToken, async (req: any, res: any) => {
-  const { customContactFields, pipelineStages, snippets } = req.body;
-  const current = await getSettings();
-  if (customContactFields !== undefined) current.customContactFields = customContactFields;
-  if (pipelineStages !== undefined) current.pipelineStages = pipelineStages;
-  if (snippets !== undefined) current.snippets = snippets;
-  
-  await saveSettings(current);
-  res.json(current);
+  try {
+    const current = await getSettings();
+    const next = { ...current, ...req.body };
+    await saveSettings(next);
+    res.json(next);
+  } catch (error) {
+    res.status(500).json({ error: 'Error updating settings' });
+  }
 });
 
 const PORT = process.env.PORT || 3001;
