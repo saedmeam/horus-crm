@@ -29,18 +29,32 @@ const prisma = new PrismaClient();
 const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || '';
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || '';
 if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
-  setVapidDetails('mailto:admin@horustech.com', VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+  try {
+    setVapidDetails('mailto:admin@horustech.com', VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+  } catch (e) {
+    console.error('Error configurando Web Push (VAPID):', e);
+  }
 }
 
 const getMetaCredentials = async () => {
-  const setting = await prisma.systemSetting.findUnique({ where: { id: 'default' } });
-  const data: any = setting?.data || {};
-  return {
-    whatsappToken: data.WHATSAPP_TOKEN || process.env.WHATSAPP_TOKEN,
-    verifyToken: data.WHATSAPP_VERIFY_TOKEN || process.env.WHATSAPP_VERIFY_TOKEN,
-    wabaId: data.WABA_ID || '',
-    phoneNumberId: data.DEFAULT_PHONE_NUMBER_ID || process.env.DEFAULT_PHONE_NUMBER_ID
-  };
+  try {
+    const setting = await prisma.systemSetting.findUnique({ where: { id: 'default' } });
+    const data: any = setting?.data || {};
+    return {
+      whatsappToken: data.WHATSAPP_TOKEN || process.env.WHATSAPP_TOKEN,
+      verifyToken: data.WHATSAPP_VERIFY_TOKEN || process.env.WHATSAPP_VERIFY_TOKEN,
+      wabaId: data.WABA_ID || '',
+      phoneNumberId: data.DEFAULT_PHONE_NUMBER_ID || process.env.DEFAULT_PHONE_NUMBER_ID
+    };
+  } catch (e) {
+    console.error('Error leyendo credenciales Meta:', e);
+    return {
+      whatsappToken: process.env.WHATSAPP_TOKEN || '',
+      verifyToken: process.env.WHATSAPP_VERIFY_TOKEN || '',
+      wabaId: '',
+      phoneNumberId: process.env.DEFAULT_PHONE_NUMBER_ID || ''
+    };
+  }
 };
 
 
@@ -344,12 +358,18 @@ const fileFilter = (req: any, file: any, cb: any) => {
     'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4',
     'video/mp4', 'video/webm',
     'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    // Archivos 3D y médicos
+    'model/stl', 'application/sla', 'application/vnd.ms-pki.stl',
+    'model/obj', 'application/dicom', 'application/octet-stream'
   ];
-  if (allowedMimes.includes(file.mimetype)) {
+  const allowedExtensions = ['.stl', '.obj', '.dcm', '.dicom'];
+  const ext = (file.originalname || '').toLowerCase();
+  const hasAllowedExt = allowedExtensions.some(e => ext.endsWith(e));
+  if (allowedMimes.includes(file.mimetype) || hasAllowedExt) {
     cb(null, true);
   } else {
-    cb(new Error('Formato de archivo no permitido. Solo imagenes, audios, videos y documentos.'));
+    cb(new Error('Formato de archivo no permitido. Solo imagenes, audios, videos, documentos y archivos 3D/DICOM.'));
   }
 };
 const upload = multer({ storage, fileFilter, limits: { fileSize: 20 * 1024 * 1024 } });
@@ -394,19 +414,28 @@ const isUserConnected = (userId: string) => {
 };
 
 const sendPushToUser = async (userId: string, payload: any) => {
-  if (isUserConnected(userId)) return;
-  const subs = await prisma.pushSubscription.findMany({ where: { userId } });
-  for (const sub of subs) {
+  try {
+    if (isUserConnected(userId)) return;
+    let subs: any[] = [];
     try {
-      await sendNotification(
-        { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-        JSON.stringify(payload)
-      );
-    } catch (e: any) {
-      if (e?.statusCode === 404 || e?.statusCode === 410) {
-        await prisma.pushSubscription.delete({ where: { id: sub.id } }).catch(() => {});
+      subs = await prisma.pushSubscription.findMany({ where: { userId } });
+    } catch (e) {
+      return; // Tabla de suscripciones aún no disponible; no bloquear el flujo
+    }
+    for (const sub of subs) {
+      try {
+        await sendNotification(
+          { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+          JSON.stringify(payload)
+        );
+      } catch (e: any) {
+        if (e?.statusCode === 404 || e?.statusCode === 410) {
+          await prisma.pushSubscription.delete({ where: { id: sub.id } }).catch(() => {});
+        }
       }
     }
+  } catch (e) {
+    console.error('Error enviando push:', e);
   }
 };
 
@@ -804,6 +833,8 @@ app.post('/api/conversations/:id/messages', authenticateToken, async (req: any, 
               if (mediaType === 'AUDIO') mimeType = 'audio/mp4';
               if (mediaType === 'VIDEO') mimeType = 'video/mp4';
               if (mediaType === 'DOCUMENT_PDF') mimeType = 'application/pdf';
+              if (mediaType === 'FILE_3D_STL') mimeType = 'model/stl';
+              if (mediaType === 'FILE_DICOM') mimeType = 'application/dicom';
               
               const fileBuffer = require('fs').readFileSync(localFilePath);
               const blob = new Blob([fileBuffer], { type: mimeType });
@@ -876,6 +907,7 @@ app.post('/api/conversations/:id/messages', authenticateToken, async (req: any, 
 
     res.json(savedMessage);
   } catch (error) {
+    console.error('Error en envío de mensaje:', error);
     res.status(500).json({ error: 'Error sending message' });
   }
 });
@@ -1057,15 +1089,19 @@ app.post('/api/templates', authenticateToken, async (req: any, res: any) => {
 // --- FASE 1 & MULTI-NUMBER: ENDPOINTS DEL WEBHOOK DE META ---
 
 app.get('/webhook/whatsapp', async (req, res) => {
-  const mode = req.query['hub.mode'];
-  const token = req.query['hub.verify_token'];
-  const challenge = req.query['hub.challenge'];
-  const creds = await getMetaCredentials();
-  const verifyToken = creds.verifyToken || process.env.WHATSAPP_VERIFY_TOKEN;
-  if (mode === 'subscribe' && verifyToken && token === verifyToken) {
-    res.status(200).send(challenge);
-  } else {
-    res.sendStatus(403);
+  try {
+    const mode = req.query['hub.mode'];
+    const token = req.query['hub.verify_token'];
+    const challenge = req.query['hub.challenge'];
+    const creds = await getMetaCredentials();
+    const verifyToken = creds.verifyToken || process.env.WHATSAPP_VERIFY_TOKEN;
+    if (mode === 'subscribe' && verifyToken && token === verifyToken) {
+      return res.status(200).send(challenge);
+    }
+    return res.sendStatus(403);
+  } catch (error) {
+    console.error('Error en verificación de webhook:', error);
+    return res.sendStatus(500);
   }
 });
 
@@ -1108,10 +1144,10 @@ app.post('/webhook/whatsapp', async (req, res) => {
             }
 
             const messageObj = change.value.messages[0];
-            const contactObj = change.value.contacts[0];
+            const contactObj = change.value.contacts && change.value.contacts.length > 0 ? change.value.contacts[0] : null;
             
-            const phone = contactObj.wa_id;
-            const name = contactObj.profile.name;
+            const phone = contactObj ? contactObj.wa_id : messageObj.from;
+            const name = contactObj && contactObj.profile ? contactObj.profile.name : "Desconocido";
             
             let text = messageObj.text?.body || '';
             let mediaUrl = null;
@@ -1163,6 +1199,9 @@ app.post('/webhook/whatsapp', async (req, res) => {
                   else if (mime.includes('mp4')) ext = '.mp4';
                   else if (mime.includes('pdf')) ext = '.pdf';
                   else if (mime.includes('word')) ext = '.docx';
+                  else if (mime.includes('stl') || mime.includes('sla')) ext = '.stl';
+                  else if (mime.includes('obj')) ext = '.obj';
+                  else if (mime.includes('dicom') || mime.includes('dcm')) ext = '.dcm';
 
                   const filename = Date.now() + '-' + mediaIdToDownload + ext;
                   const savePath = require('path').join(__dirname, '../uploads', filename);
@@ -1236,16 +1275,20 @@ app.post('/webhook/whatsapp', async (req, res) => {
 
             // Notificación push (Web Push) para usuarios NO conectados por socket
             if (!isEcho) {
-              const targetIds = await getConversationTargetUserIds(conversation.id);
-              const pushPayload = {
-                title: `Mensaje de ${contact.name || phone}`,
-                body: (text || 'Nuevo mensaje').substring(0, 120),
-                icon: '/logo-icon.png',
-                tag: conversation.id,
-                conversationId: conversation.id
-              };
-              for (const uid of targetIds) {
-                await sendPushToUser(uid, pushPayload);
+              try {
+                const targetIds = await getConversationTargetUserIds(conversation.id);
+                const pushPayload = {
+                  title: `Mensaje de ${contact.name || phone}`,
+                  body: (text || 'Nuevo mensaje').substring(0, 120),
+                  icon: '/logo-icon.png',
+                  tag: conversation.id,
+                  conversationId: conversation.id
+                };
+                for (const uid of targetIds) {
+                  await sendPushToUser(uid, pushPayload);
+                }
+              } catch (e) {
+                console.error('Error al preparar notificación push:', e);
               }
             }
           }
@@ -1255,7 +1298,7 @@ app.post('/webhook/whatsapp', async (req, res) => {
     res.sendStatus(200);
   } catch (error) {
     console.error('Error procesando webhook:', error);
-    res.sendStatus(500);
+    res.sendStatus(200); // Evitar 500 para que Meta no se bloquee
   }
 });
 

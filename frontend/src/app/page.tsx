@@ -92,7 +92,13 @@ const [boNotes, setBoNotes] = useState('');
     }
   }, [selectedChat, messages]);
   const [socket, setSocket] = useState<Socket | null>(null);
-  
+  const selectedChatRef = require('react').useRef<any>(null);
+
+  // Mantener el chat seleccionado actualizado sin reconectar el socket
+  useEffect(() => {
+    selectedChatRef.current = selectedChat;
+  }, [selectedChat]);
+
   const [darkMode, setDarkMode] = useState(false);
 
   
@@ -365,7 +371,7 @@ const [showInfo, setShowInfo] = useState(false);
         
 
         setMessages(prev => {
-          if (selectedChat && newMsg.conversationId === selectedChat.id) {
+          if (selectedChatRef.current && newMsg.conversationId === selectedChatRef.current.id) {
             // Mark as read immediately if chat is open
             if (newMsg.senderType === 'CLIENT') {
                fetch(`${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}`}/api/conversations/` + newMsg.conversationId + '/read', { 
@@ -398,7 +404,7 @@ const [showInfo, setShowInfo] = useState(false);
       });
 
     return () => { newSocket.disconnect(); }
-  }, [selectedChat]);
+  }, []);
 
   useEffect(() => {
     const handleOpenChatEvent = (e: any) => {

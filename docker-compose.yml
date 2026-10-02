@@ -28,8 +28,10 @@ services:
       - JWT_SECRET=${JWT_SECRET:-horus_super_secret_key_2026}
       - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY:-BFvKHN15VTsqkPFNmIy13bcAIziXgf_H4ZaEngFBml3mBSXC-Vy7-NR79lv1JwW0slcKYlERjnOZgPsHnXfd94w}
       - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY:-6_Qirt-gYtl5NxHLC_ofY19Dwc1-YYZXtqctMSK-3PM}
+      - WHATSAPP_TOKEN=${WHATSAPP_TOKEN:-}
       - WHATSAPP_VERIFY_TOKEN=${WHATSAPP_VERIFY_TOKEN:-mi_token_secreto_horustech}
       - DEFAULT_PHONE_NUMBER_ID=${DEFAULT_PHONE_NUMBER_ID:-}
+      - WABA_ID=${WABA_ID:-}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@horustech.com}
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-horustech2026}
@@ -52,6 +54,19 @@ services:
     restart: always
     ports:
       - "4000:3002"
+    depends_on:
+      - backend
+
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: horus-ngrok
+    restart: always
+    command:
+      - "http"
+      - "backend:3001"
+      - "--domain=knee-eclair-agnostic.ngrok-free.dev"
+    environment:
+      - NGROK_AUTHTOKEN=3JxtDqCfbHCcnL1RuB5cyDz6XKl_78jEYzGL2Nt1nszk2nNWh
     depends_on:
       - backend
 

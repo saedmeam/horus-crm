@@ -51,12 +51,14 @@ async function main() {
 
   let admin = await prisma.user.findUnique({ where: { email: adminEmail } });
   if (!admin) {
+    // Evitar conflicto si el username ya está en uso por otro usuario
+    const usernameTaken = await prisma.user.findFirst({ where: { username: adminUsername } });
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(adminPassword, salt);
     admin = await prisma.user.create({
       data: {
         email: adminEmail,
-        username: adminUsername,
+        username: usernameTaken ? null : adminUsername,
         name: 'SuperAdmin Horustech',
         passwordHash,
         roleId: superRole.id,
@@ -67,10 +69,22 @@ async function main() {
     console.log(`Usuario administrador creado: ${adminEmail} / ${adminUsername}`);
   } else {
     console.log(`Usuario administrador ya existía: ${adminEmail}`);
-    const updateData: any = { roleId: superRole.id, username: adminUsername };
+    // 1) Actualizar rol y línea (sin tocar username, para no fallar por conflicto)
+    const updateData: any = { roleId: superRole.id };
     if (line) updateData.lines = { connect: { id: line.id } };
     await prisma.user.update({ where: { id: admin.id }, data: updateData });
-    console.log('Rol, usuario y línea del administrador actualizados.');
+
+    // 2) Asignar username solo si está libre
+    const usernameTaken = await prisma.user.findFirst({
+      where: { username: adminUsername, NOT: { id: admin.id } }
+    });
+    if (!usernameTaken && admin.username !== adminUsername) {
+      await prisma.user.update({ where: { id: admin.id }, data: { username: adminUsername } });
+      console.log(`Username "${adminUsername}" asignado al administrador.`);
+    } else if (usernameTaken) {
+      console.log(`Aviso: el username "${adminUsername}" ya está en uso por otro usuario; se omite.`);
+    }
+    console.log('Rol y línea del administrador actualizados.');
   }
 
   console.log('--- Seeding Terminado ---');
