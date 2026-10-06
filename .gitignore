@@ -34,3 +34,8 @@ uploads/
 # Bases de datos locales
 *.sqlite
 *.db
+
+# Archivos de despliegue y temporales (limpieza)
+*.zip
+temp_check/
+/index.ts

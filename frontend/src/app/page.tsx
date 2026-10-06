@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { io, Socket } from 'socket.io-client';
 import MainSidebar from '@/components/MainSidebar';
 import { Toaster, toast } from 'react-hot-toast';
-import { Send, Paperclip, Mic, UserPlus, Search, Info, Moon, Sun, X, Save, Settings, Bell, AlarmClock, Check, MessageSquare, Reply, FileText, UserCircle, ShoppingCart, Box, CheckCheck, Download } from 'lucide-react';
+import { Send, Paperclip, Mic, UserPlus, Search, Info, Moon, Sun, X, Save, Settings, Bell, AlarmClock, Check, MessageSquare, Reply, FileText, UserCircle, ShoppingCart, Box, CheckCheck, Download, ChevronDown } from 'lucide-react';
 
 
 // Make sure X and FileText are imported, they are on line 6.
@@ -102,11 +102,12 @@ const [boNotes, setBoNotes] = useState('');
   const [darkMode, setDarkMode] = useState(false);
   const [chatSearch, setChatSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
 
   const exportConversation = () => {
     if (!selectedChat || !messages.length) return;
     const lines = messages.map((m: any) => {
-      const sender = m.isInternal ? (m.senderName || 'Comentario interno') : (m.senderType === 'CLIENT' ? 'Cliente' : 'Agente');
+      const sender = m.isInternal ? (m.senderName || 'Comentario interno') : (m.senderType === 'CLIENT' ? 'Cliente' : (m.senderUser?.name || m.senderUser?.username || m.senderUser?.email || 'Agente'));
       const time = new Date(m.createdAt).toLocaleString();
       const text = m.content || (m.mediaUrl ? '[Archivo]' : '');
       return `[${time}] ${sender}: ${text}`;
@@ -146,6 +147,7 @@ const [showInfo, setShowInfo] = useState(false);
         setSelectedChat((prev: any) => ({ ...prev, assignedUserId: userId }));
         setConversations(prev => prev.map(c => c.id === selectedChat.id ? { ...c, assignedUserId: userId } : c));
         setShowAssignDropdown(false);
+        toast.success(userId ? 'Chat asignado correctamente' : 'Chat liberado');
       }
     } catch (e) {
       console.error(e);
@@ -435,6 +437,7 @@ const [showInfo, setShowInfo] = useState(false);
   }, [conversations]);
 
   const handleSelectChat = (chat: any) => {
+    setIsFilterDropdownOpen(false);
     setSelectedChat(chat);
     setContactName(chat?.contact?.name || chat?.contact?.phone);
     setContactEmail(chat?.contact?.email || '');
@@ -863,19 +866,44 @@ const handleSelectMetaTemplate = (t: any) => {
                 placeholder="Buscar contacto o chat..." 
                 value={chatSearch}
                 onChange={(e) => setChatSearch(e.target.value)}
+                onFocus={() => setIsFilterDropdownOpen(false)}
                 className="w-full bg-gray-100 dark:bg-[#202c33] text-gray-800 dark:text-[#d1d7db] rounded-lg py-2 pl-10 pr-4 outline-none focus:ring-2 focus:ring-blue-300 dark:focus:ring-[#00a884] transition-colors duration-200 placeholder-gray-400 dark:placeholder-[#8696a0]"
               />
             </div>
-            <div className="flex gap-2 mt-2 overflow-x-auto">
-              {['ALL', 'UNASSIGNED', 'OPEN', 'PENDING', 'CLOSED'].map(s => (
-                <button key={s} onClick={() => setStatusFilter(s)} className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${statusFilter === s ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 dark:bg-[#202c33] dark:text-[#aebac1]'}`}>
-                  {s === 'ALL' ? 'Todos' : s === 'UNASSIGNED' ? 'Sin asignar' : s === 'OPEN' ? 'Abiertos' : s === 'PENDING' ? 'Pendientes' : 'Cerrados'}
-                </button>
-              ))}
-            </div>
+            <div className="flex gap-1.5 mt-2 pb-2 flex-wrap relative z-50">
+                {['ALL', 'UNASSIGNED', 'OPEN'].map(s => (
+                  <button key={s} onClick={() => { setStatusFilter(s); setIsFilterDropdownOpen(false); }} className={`px-2.5 py-1.5 rounded-full text-[13px] font-medium whitespace-nowrap transition-all duration-200 ${statusFilter === s ? 'bg-gray-200 text-gray-800 border border-transparent dark:bg-[#0a332c] dark:text-[#00a884]' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 dark:bg-[#202c33] dark:border-transparent dark:text-[#aebac1] dark:hover:bg-[#2A3942]'}`}>
+                    {s === 'ALL' ? 'Todos' : s === 'UNASSIGNED' ? 'Sin asignar' : 'Abiertos'}
+                  </button>
+                ))}
+                
+                <div className="relative">
+                  <button 
+                    onClick={() => setIsFilterDropdownOpen(!isFilterDropdownOpen)}
+                    className={`px-2.5 py-1.5 rounded-full text-[13px] font-medium whitespace-nowrap transition-all duration-200 flex items-center gap-1 ${['PENDING', 'CLOSED'].includes(statusFilter) || isFilterDropdownOpen ? 'bg-gray-200 text-gray-800 border border-transparent dark:bg-[#0a332c] dark:text-[#00a884]' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 dark:bg-[#202c33] dark:border-transparent dark:text-[#aebac1] dark:hover:bg-[#2A3942]'}`}
+                  >
+                    {['PENDING', 'CLOSED'].includes(statusFilter) ? (statusFilter === 'PENDING' ? 'Pendientes' : 'Cerrados') : 'Más'}
+                    <ChevronDown size={14} className="ml-1" />
+                  </button>
+                  
+                  {isFilterDropdownOpen && (
+                    <div className="absolute top-full mt-1 left-0 bg-white dark:bg-[#202c33] border border-gray-200 dark:border-gray-700 shadow-lg rounded-xl py-2 z-50 min-w-[140px]">
+                      {['PENDING', 'CLOSED'].map(s => (
+                        <button
+                          key={s}
+                          onClick={() => { setStatusFilter(s); setIsFilterDropdownOpen(false); }}
+                          className={`w-full text-left px-4 py-2 text-[13px] transition-colors ${statusFilter === s ? 'bg-gray-100 dark:bg-[#2A3942] text-gray-900 dark:text-white' : 'text-gray-700 dark:text-[#d1d7db] hover:bg-gray-50 dark:hover:bg-[#2A3942]'}`}
+                        >
+                          {s === 'PENDING' ? 'Pendientes' : 'Cerrados'}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
           </div>
 
-          <div className="flex-1 min-h-0 overflow-y-auto">
+          <div className="flex-1 min-h-0 overflow-y-auto" onClick={() => setIsFilterDropdownOpen(false)}>
             {conversations.length === 0 ? (
               <p className="text-center text-gray-400 dark:text-[#8696a0] mt-10 text-sm">No hay conversaciones</p>
             ) : (
@@ -1407,15 +1435,15 @@ const handleSelectMetaTemplate = (t: any) => {
                 
                 <div>
                   <label className="text-xs text-gray-500 dark:text-[#8696a0] font-semibold mb-1 block">Direccion</label>
-                  <input type="text" value={contactDireccion} onChange={(e) => setContactDireccion(e.target.value)} placeholder="Anadir direccion" className="w-full bg-gray-50 dark:bg-[#202c33] border border-gray-200 dark:border-[#222d34] rounded px-3 py-1.5 text-sm outline-none focus:border-blue-400 text-gray-800 dark:text-gray-200" />
+                  <input type="text" value={contactDireccion} onChange={(e) => setContactDireccion(e.target.value)} placeholder="Anadir direccion" className="w-full bg-gray-50 dark:bg-[#202c33] border border-gray-200 dark:border-[#222d34] rounded px-2.5 py-1.5 text-sm outline-none focus:border-blue-400 text-gray-800 dark:text-gray-200" />
                 </div>
                 <div>
                   <label className="text-xs text-gray-500 dark:text-[#8696a0] font-semibold mb-1 block">Email Address</label>
-                  <input type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder="Anadir email" className="w-full bg-gray-50 dark:bg-[#202c33] border border-gray-200 dark:border-[#222d34] rounded px-3 py-1.5 text-sm outline-none focus:border-blue-400 text-gray-800 dark:text-gray-200" />
+                  <input type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder="Anadir email" className="w-full bg-gray-50 dark:bg-[#202c33] border border-gray-200 dark:border-[#222d34] rounded px-2.5 py-1.5 text-sm outline-none focus:border-blue-400 text-gray-800 dark:text-gray-200" />
                 </div>
                 <div>
                   <label className="text-xs text-gray-500 dark:text-[#8696a0] font-semibold mb-1 block">Vendedor Asignado</label>
-                  <select value={contactVendedor} onChange={(e) => setContactVendedor(e.target.value)} className="w-full bg-gray-50 dark:bg-[#202c33] border border-gray-200 dark:border-[#222d34] rounded px-3 py-1.5 text-sm outline-none focus:border-blue-400 text-gray-800 dark:text-gray-200">
+                  <select value={contactVendedor} onChange={(e) => setContactVendedor(e.target.value)} className="w-full bg-gray-50 dark:bg-[#202c33] border border-gray-200 dark:border-[#222d34] rounded px-2.5 py-1.5 text-sm outline-none focus:border-blue-400 text-gray-800 dark:text-gray-200">
                     <option value="">Seleccionar vendedor...</option>
                     <option value="santiago">Santiago</option>
                     <option value="sofia">Sofia</option>
@@ -1424,7 +1452,7 @@ const handleSelectMetaTemplate = (t: any) => {
                 </div>
                 <div>
                   <label className="text-xs text-gray-500 dark:text-[#8696a0] font-semibold mb-1 block">Identificacion (RUC/CI)</label>
-                  <input type="text" value={contactIdentificacion} onChange={(e) => setContactIdentificacion(e.target.value)} placeholder="Anadir identificacion" className="w-full bg-gray-50 dark:bg-[#202c33] border border-gray-200 dark:border-[#222d34] rounded px-3 py-1.5 text-sm outline-none focus:border-blue-400 text-gray-800 dark:text-gray-200" />
+                  <input type="text" value={contactIdentificacion} onChange={(e) => setContactIdentificacion(e.target.value)} placeholder="Anadir identificacion" className="w-full bg-gray-50 dark:bg-[#202c33] border border-gray-200 dark:border-[#222d34] rounded px-2.5 py-1.5 text-sm outline-none focus:border-blue-400 text-gray-800 dark:text-gray-200" />
                 </div>
               </div>
 

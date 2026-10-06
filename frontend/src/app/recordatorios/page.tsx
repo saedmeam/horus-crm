@@ -110,6 +110,19 @@ export default function RecordatoriosPage() {
     (c.phone || '').includes(searchTerm)
   );
 
+  const isToday = (dateStr: string) => {
+    const d = new Date(dateStr);
+    const now = new Date();
+    return d.getDate() === now.getDate() && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  };
+
+  const sortedReminders = [...reminders].sort((a, b) => {
+    const aToday = isToday(a.scheduledFor) ? 0 : 1;
+    const bToday = isToday(b.scheduledFor) ? 0 : 1;
+    if (aToday !== bToday) return aToday - bToday;
+    return new Date(a.scheduledFor).getTime() - new Date(b.scheduledFor).getTime();
+  });
+
   return (
     <div className={(darkMode ? 'dark' : '') + ' flex h-screen w-full overflow-hidden'}>
       <MainSidebar user={user} />
@@ -132,7 +145,7 @@ export default function RecordatoriosPage() {
 
         {/* List Content */}
         <div className="flex-1 overflow-y-auto p-6 relative">
-          {reminders.length === 0 ? (
+          {sortedReminders.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-gray-400 dark:text-[#8696a0]">
               <Calendar className="w-16 h-16 mb-4 opacity-50" />
               <h2 className="text-xl font-semibold mb-2">No tienes recordatorios pendientes</h2>
@@ -140,7 +153,7 @@ export default function RecordatoriosPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-w-7xl mx-auto">
-              {reminders.map(rem => (
+              {sortedReminders.map(rem => (
                 <div key={rem.id} className="bg-white dark:bg-[#202c33] border border-gray-200 dark:border-[#374248] rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
                   <div className="absolute top-0 left-0 w-1 h-full bg-blue-500 dark:bg-[#00a884]"></div>
                   
@@ -161,9 +174,14 @@ export default function RecordatoriosPage() {
                     {rem.notes}
                   </p>
                   
-                  <div className="flex items-center gap-2 text-sm font-semibold text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 px-3 py-1.5 rounded-lg inline-flex">
-                    <Calendar className="w-4 h-4" />
-                    {new Date(rem.scheduledFor).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 px-3 py-1.5 rounded-lg inline-flex">
+                      <Calendar className="w-4 h-4" />
+                      {new Date(rem.scheduledFor).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                    </div>
+                    {isToday(rem.scheduledFor) && (
+                      <span className="text-xs font-bold text-white bg-red-500 px-2 py-1 rounded-full">HOY</span>
+                    )}
                   </div>
                 </div>
               ))}

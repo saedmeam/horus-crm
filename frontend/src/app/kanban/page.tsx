@@ -74,7 +74,7 @@ export default function KanbanPage() {
 
     // Update backend
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}/api/conversations/\${convId}/stage`, {
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}/api/conversations/${convId}/stage`, {
         method: 'PUT',
         headers: { 
           'Content-Type': 'application/json',

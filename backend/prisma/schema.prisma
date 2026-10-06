@@ -53,6 +53,8 @@ model User {
   email            String          @unique
   passwordHash     String
   roleId           String?
+  businessLine     String          @default("SM") // "SM", "3D", "ALL"
+  signatureUrl     String?         // Firma del tecnico (opcional)
   role             Role?    @relation(fields: [roleId], references: [id])
   active           Boolean         @default(true)
   createdAt        DateTime        @default(now())
@@ -65,6 +67,8 @@ model User {
   internalComments InternalComment[]
   messages         Message[]
   pushSubscriptions PushSubscription[]
+  tickets           Ticket[]
+  ticketReports     TicketReport[]
 
 }
 
@@ -163,11 +167,13 @@ model Backorder {
   id               String       @id @default(uuid())
   contactId        String
   contact          Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  orderNumber      String?
   productName      String
   category         String?      
   quantity         Int          @default(1)
   specification    String?      
   notes            String?      @db.Text
+  photoUrl         String?      // Para "Compromiso" photo upload
   createdAt        DateTime     @default(now())
 }
 
@@ -208,4 +214,95 @@ model PushSubscription {
   p256dh    String
   auth      String
   createdAt DateTime @default(now())
+}
+
+
+model Ticket {
+  id               String    @id @default(uuid())
+  ticketNumber     String    @unique // Ej: IDISM0972
+  incidentType     String?
+  subject          String?
+  description      String?   @db.Text
+  clientId         String?
+  client           HelpdeskClient?  @relation(fields: [clientId], references: [id])
+  equipment        String?
+  priority         String?   // Baja, Media, Alta
+  reportedBy       String?
+  assignedUserId   String?
+  assignedUser     User?     @relation(fields: [assignedUserId], references: [id])
+  status           String    @default("ABIERTO") // Abierto, Seguimiento, Cerrado, etc.
+  createdAt        DateTime  @default(now())
+  closedAt         DateTime?
+  updatedAt        DateTime  @updatedAt
+
+  reports          TicketReport[]
+}
+
+model TicketReport {
+  id                 String    @id @default(uuid())
+  ticketId           String
+  ticket             Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  task               String?
+  clientId           String?
+  client             HelpdeskClient?  @relation(fields: [clientId], references: [id])
+  equipment          String?
+  technicianId       String?
+  technician         User?     @relation(fields: [technicianId], references: [id])
+  workDone           String?   @db.Text
+  observation        String?   @db.Text
+  startDate          DateTime?
+  endDate            DateTime?
+  status             String?
+  attentionModality  String?   // Remoto, Presencial, Mixto
+  clientName         String?
+  clientEmail        String?
+  clientSignatureUrl String?   // Firma del cliente
+  emailStatus        String?   // Iniciado, Completado
+  pdfUrl             String?
+  ccEmail            String?
+  techEmail          String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+}
+
+
+model HelpdeskClient {
+  id           String   @id @default(uuid())
+  name         String
+  email        String?
+  phone        String?
+  city         String?
+  address      String?
+  businessLine String   @default("SM") // "SM" o "3D"
+  createdAt    DateTime @default(now())
+
+  tickets      Ticket[]
+  reports      TicketReport[]
+  equipments   HelpdeskEquipment[]
+}
+
+model HelpdeskEquipment {
+  id           String   @id @default(uuid())
+  name         String
+  brand        String?
+  model        String?
+  serial       String?
+  clientId     String?
+  businessLine String   @default("SM")
+  client       HelpdeskClient? @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+}
+
+model HelpdeskIncidentType {
+  id           String   @id @default(uuid())
+  name         String
+  businessLine String   @default("SM")
+  createdAt    DateTime @default(now())
+}
+
+model HelpdeskTaskType {
+  id           String   @id @default(uuid())
+  name         String
+  businessLine String   @default("SM")
+  createdAt    DateTime @default(now())
 }

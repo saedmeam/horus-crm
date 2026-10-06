@@ -16,7 +16,9 @@ export default function UsersPage() {
     email: '',
     password: '',
     role: '',
-    lineIds: [] as string[]
+    lineIds: [] as string[],
+    businessLine: 'SM',
+    signatureUrl: ''
   });
 
   const fetchRoles = async () => {
@@ -45,11 +47,11 @@ export default function UsersPage() {
 
   const openCreate = () => {
     setEditingUserId(null);
-    setFormData({ name: '', username: '', email: '', password: '', role: '', lineIds: [] });
+    setFormData({ name: '', username: '', email: '', password: '', role: '', signatureUrl: '', lineIds: [] });
     setShowModal(true);
   };
 
-  const openEdit = (user: any) => {
+    const openEdit = (user: any) => {
     setEditingUserId(user.id);
     setFormData({
       name: user.name,
@@ -57,11 +59,25 @@ export default function UsersPage() {
       email: user.email,
       password: '', // Leave blank unless changing
       role: user.roleId || user.role?.id || '',
+      signatureUrl: user.signatureUrl || '',
+      businessLine: user.businessLine || 'SM',
       lineIds: user.lines ? user.lines.map((l: any) => l.id) : []
     });
     setShowModal(true);
   };
 
+  
+  const handleSignatureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFormData(prev => ({ ...prev, signatureUrl: reader.result as string }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+  
   const handleSaveUser = async (e: React.FormEvent) => {
     e.preventDefault();
     const url = editingUserId 

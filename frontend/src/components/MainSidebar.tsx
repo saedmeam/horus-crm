@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState, useRef, useEffect } from 'react';
-import { MessageSquare, LayoutDashboard, Users, Settings, LogOut, KeyRound, AlarmClock } from 'lucide-react';
+import { MessageSquare, LayoutDashboard, Users, Settings, LogOut, KeyRound, AlarmClock, LifeBuoy, Package, Activity, Printer } from 'lucide-react';
 
 export default function MainSidebar({ user }: { user: any }) {
   const pathname = usePathname();
@@ -37,8 +37,11 @@ export default function MainSidebar({ user }: { user: any }) {
     { name: 'Recordatorios', icon: AlarmClock, href: '/recordatorios' },
     { name: 'Chats', icon: MessageSquare, href: '/' },
     { name: 'Embudo (Kanban)', icon: LayoutDashboard, href: '/kanban' },
+    { name: 'Mesa de Ayuda (SM)', icon: Activity, href: '/tickets-sm', line: 'SM' },
+    { name: 'Soporte 3D', icon: Printer, href: '/tickets-3d', line: '3D' },
+    { name: 'Órdenes de Compra', icon: Package, href: '/backorders', line: '3D' },
     { name: 'Contactos', icon: Users, href: '/contacts' },
-      { name: 'Configuración', icon: Settings, href: '/admin/notificaciones' },
+    { name: 'Configuración', icon: Settings, href: '/admin/notificaciones' },
   ];
 
   
@@ -96,6 +99,7 @@ export default function MainSidebar({ user }: { user: any }) {
 
         <nav className="flex-1 w-full flex flex-col items-center space-y-4">
           {menuItems.filter(item => {
+              if (item.line && user?.businessLine && user.businessLine !== 'ALL' && item.line !== user.businessLine) return false;
               if (isAdmin) return true;
               if (!user?.roleData?.screenAccess) {
                  if (item.href.startsWith('/admin')) return false;

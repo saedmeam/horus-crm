@@ -8,7 +8,8 @@
     "dev": "nodemon src/index.ts",
     "start": "ts-node src/index.ts",
     "postinstall": "prisma skills sync || exit 0",
-    "seed": "ts-node prisma/seed.ts"
+    "seed": "ts-node prisma/seed.ts",
+    "seed:helpdesk": "node scripts/seed-catalogs-json.js"
   },
   "keywords": [],
   "author": "",
@@ -22,7 +23,8 @@
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.4.0",
     "socket.io": "^4.8.4",
-    "web-push": "^3.6.7"
+    "web-push": "^3.6.7",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@prisma/client": "^5.22.0",

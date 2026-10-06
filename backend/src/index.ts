@@ -23,6 +23,15 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Log de peticiones (logs mejorados)
+app.use((req: any, res: any, next: any) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl} ${res.statusCode} ${Date.now() - start}ms`);
+  });
+  next();
+});
+
 const prisma = new PrismaClient();
 
 // Web Push (notificaciones con la pestaña cerrada)
@@ -152,7 +161,7 @@ app.get('/api/users', authenticateToken, async (req: any, res: any) => {
       return res.status(403).json({ error: 'No tienes permisos para ver usuarios' });
     }
     const users = await prisma.user.findMany({
-      select: { id: true, username: true, name: true, email: true, role: true, active: true, createdAt: true, lines: true }
+      select: { id: true, username: true, name: true, email: true, role: true, active: true, createdAt: true, lines: true, signatureUrl: true }
     });
     res.json(users);
   } catch (error) {
@@ -166,7 +175,7 @@ app.post('/api/users', authenticateToken, async (req: any, res: any) => {
     if (req.user.role !== 'SUPERADMIN' && req.user.role !== 'ADMIN') {
       return res.status(403).json({ error: 'No tienes permisos para crear usuarios' });
     }
-    const { name, username, email, password, role, lineIds } = req.body;
+    const { name, username, email, password, role, lineIds, signatureUrl } = req.body;
     
     // Hash password
     const salt = await bcrypt.genSalt(10);
@@ -261,7 +270,7 @@ app.put('/api/users/:id', authenticateToken, async (req: any, res: any) => {
     if (req.user.role !== 'SUPERADMIN' && req.user.role !== 'ADMIN') {
       return res.status(403).json({ error: 'No tienes permisos' });
     }
-    const { name, username, email, password, role, lineIds } = req.body;
+    const { name, username, email, password, role, lineIds, signatureUrl } = req.body;
     
     let updateData: any = {
       name,
@@ -339,7 +348,7 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     const token = jwt.sign(
-      { id: user.id, role: (user as any).role?.name || 'SALES', roleData: (user as any).role, email: user.email },
+      { id: user.id, role: (user as any).role?.name || 'SALES', roleData: (user as any).role, email: user.email, businessLine: (user as any).businessLine || 'SM' },
       process.env.JWT_SECRET || 'secret',
       { expiresIn: '24h' }
     );
@@ -592,11 +601,27 @@ app.put('/api/conversations/:id/assign', authenticateToken, async (req: any, res
     // Si assignedUserId es undefined, asumimos que es "asignarme a mi" por defecto (retrocompatibilidad)
     const targetUserId = assignedUserId !== undefined ? assignedUserId : req.user.id;
     
+    const existing = await prisma.conversation.findUnique({ where: { id }, include: { contact: true } });
+    if (!existing) return res.status(404).json({ error: 'Conversation not found' });
+
     const conversation = await prisma.conversation.update({
       where: { id },
       data: { assignedUserId: targetUserId } // Puede ser un ID o null para liberar
     });
     
+    // Notificación persistente para el vendedor asignado (si es otro usuario)
+    if (targetUserId && targetUserId !== req.user.id) {
+      await prisma.reminder.create({
+        data: {
+          contactId: existing.contactId,
+          userId: targetUserId,
+          scheduledFor: new Date(),
+          notes: `🔔 Te asignaron un chat con ${existing.contact?.name || existing.contact?.phone || 'un contacto'}`,
+          isCompleted: false
+        }
+      }).catch(() => {});
+    }
+
     io.emit('chat_assigned', { conversationId: id, assignedUserId: targetUserId });
     res.json(conversation);
   } catch (error) {
@@ -1656,6 +1681,205 @@ app.put('/api/settings', authenticateToken, async (req: any, res: any) => {
   } catch (error) {
     res.status(500).json({ error: 'Error updating settings' });
   }
+});
+
+
+// --- HELPDESK CATALOGS ---
+app.get('/api/helpdesk/clients', authenticateToken, async (req: any, res: any) => {
+  try {
+    const reqLine = req.query.line;
+    const userLine = req.user?.businessLine || 'SM';
+    let filterLine = userLine;
+    if (userLine === 'ALL' && reqLine) {
+      filterLine = reqLine;
+    }
+    const whereClause: any = filterLine === 'ALL' ? {} : { businessLine: filterLine };
+
+    const data = await prisma.helpdeskClient.findMany({ where: whereClause, include: { equipments: true } });
+    res.json(data);
+  } catch (error) { res.status(500).json({ error: 'Error' }); }
+});
+
+app.post('/api/helpdesk/clients', authenticateToken, async (req: any, res: any) => {
+  try {
+    const data = await prisma.helpdeskClient.create({ data: req.body });
+    res.json(data);
+  } catch (error) { res.status(500).json({ error: 'Error' }); }
+});
+
+app.get('/api/helpdesk/equipments', authenticateToken, async (req: any, res: any) => {
+  try {
+    const reqLine = req.query.line;
+    const userLine = req.user?.businessLine || 'SM';
+    let filterLine = userLine;
+    if (userLine === 'ALL' && reqLine) {
+      filterLine = reqLine;
+    }
+    const whereClause: any = filterLine === 'ALL' ? {} : { businessLine: filterLine };
+
+    const data = await prisma.helpdeskEquipment.findMany({ where: whereClause, include: { client: true } });
+    res.json(data);
+  } catch (error) { res.status(500).json({ error: 'Error' }); }
+});
+app.post('/api/helpdesk/equipments', authenticateToken, async (req: any, res: any) => {
+  try {
+    const data = await prisma.helpdeskEquipment.create({ data: req.body });
+    res.json(data);
+  } catch (error) { res.status(500).json({ error: 'Error' }); }
+});
+
+app.get('/api/helpdesk/incident-types', authenticateToken, async (req: any, res: any) => {
+  try {
+    const reqLine = req.query.line;
+    const userLine = req.user?.businessLine || 'SM';
+    let filterLine = userLine;
+    if (userLine === 'ALL' && reqLine) {
+      filterLine = reqLine;
+    }
+    const whereClause: any = filterLine === 'ALL' ? {} : { businessLine: filterLine };
+
+    const data = await prisma.helpdeskIncidentType.findMany({ where: whereClause });
+    res.json(data);
+  } catch (error) { res.status(500).json({ error: 'Error' }); }
+});
+app.post('/api/helpdesk/incident-types', authenticateToken, async (req: any, res: any) => {
+  try {
+    const data = await prisma.helpdeskIncidentType.create({ data: req.body });
+    res.json(data);
+  } catch (error) { res.status(500).json({ error: 'Error' }); }
+});
+
+app.get('/api/helpdesk/task-types', authenticateToken, async (req: any, res: any) => {
+  try {
+    const reqLine = req.query.line;
+    const userLine = req.user?.businessLine || 'SM';
+    let filterLine = userLine;
+    if (userLine === 'ALL' && reqLine) {
+      filterLine = reqLine;
+    }
+    const whereClause: any = filterLine === 'ALL' ? {} : { businessLine: filterLine };
+
+    const data = await prisma.helpdeskTaskType.findMany({ where: whereClause });
+    res.json(data);
+  } catch (error) { res.status(500).json({ error: 'Error' }); }
+});
+app.post('/api/helpdesk/task-types', authenticateToken, async (req: any, res: any) => {
+  try {
+    const data = await prisma.helpdeskTaskType.create({ data: req.body });
+    res.json(data);
+  } catch (error) { res.status(500).json({ error: 'Error' }); }
+});
+
+app.get('/api/tickets-next-id', authenticateToken, async (req: any, res: any) => {
+  try {
+    const last = await prisma.ticket.findFirst({ orderBy: { ticketNumber: 'desc' } });
+    let next = 1;
+    if (last?.ticketNumber) {
+      const num = parseInt(last.ticketNumber.replace(/\D/g, ''), 10);
+      if (!isNaN(num)) next = num + 1;
+    }
+    const nextId = `IDISM${String(next).padStart(4, '0')}`;
+    res.json({ nextId });
+  } catch (error) { res.status(500).json({ error: 'Error' }); }
+});
+
+
+
+// --- BACKORDERS API ---
+app.put('/api/backorders/:id', authenticateToken, async (req, res) => {
+  try {
+    const data = await prisma.backorder.update({ where: { id: req.params.id }, data: req.body });
+    res.json(data);
+  } catch (error) { res.status(500).json({ error: 'Error' }); }
+});
+
+app.delete('/api/backorders/:id', authenticateToken, async (req, res) => {
+  try {
+    await prisma.backorder.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (error) { res.status(500).json({ error: 'Error' }); }
+});
+
+// --- TICKETS API ---
+app.get('/api/tickets', authenticateToken, async (req: any, res: any) => {
+  try {
+    const reqLine = req.query.line;
+    const userLine = req.user.businessLine || 'SM';
+    let filterLine = userLine;
+    if (userLine === 'ALL' && reqLine) {
+      filterLine = reqLine;
+    }
+    const whereClause: any = filterLine === 'ALL' ? {} : { businessLine: filterLine };
+    const data = await prisma.ticket.findMany({ 
+      where: whereClause,
+      include: { client: true, assignedUser: true, reports: { include: { technician: true } } },
+      orderBy: { updatedAt: 'desc' }
+    });
+    res.json(data);
+  } catch (error) { res.status(500).json({ error: 'Error' }); }
+});
+
+
+app.post('/api/tickets', authenticateToken, async (req: any, res: any) => {
+    try {
+      const payload = { ...req.body };
+      if (!payload.businessLine) payload.businessLine = req.user?.businessLine === 'ALL' ? 'SM' : (req.user?.businessLine || 'SM');
+    if (!payload.clientId) payload.clientId = null;
+    if (!payload.assignedUserId) payload.assignedUserId = null;
+    
+    const data = await prisma.ticket.create({ data: payload });
+    res.json(data);
+  } catch (error) { 
+    console.error(error);
+    res.status(500).json({ error: 'Error' }); 
+  }
+});
+
+
+app.put('/api/tickets/:id', authenticateToken, async (req: any, res: any) => {
+  try {
+    const payload = { ...req.body };
+    if (!payload.clientId) payload.clientId = null;
+    if (!payload.assignedUserId) payload.assignedUserId = null;
+
+    const data = await prisma.ticket.update({
+      where: { id: req.params.id },
+      data: payload
+    });
+    res.json(data);
+  } catch (error) { 
+    console.error(error);
+    res.status(500).json({ error: 'Error' }); 
+  }
+});
+
+app.get('/api/tickets/:id', authenticateToken, async (req: any, res: any) => {
+  try {
+    const data = await prisma.ticket.findUnique({ 
+      where: { id: req.params.id },
+      include: { client: true, assignedUser: true, reports: { include: { technician: true } } }
+    });
+    res.json(data);
+  } catch (error) { res.status(500).json({ error: 'Error' }); }
+});
+
+app.post('/api/tickets/:id/reports', authenticateToken, async (req: any, res: any) => {
+  try {
+    const data = await prisma.ticketReport.create({ 
+      data: { ...req.body, ticketId: req.params.id }
+    });
+    res.json(data);
+  } catch (error) { res.status(500).json({ error: 'Error' }); }
+});
+
+app.put('/api/tickets/:id/reports/:reportId', authenticateToken, async (req: any, res: any) => {
+  try {
+    const data = await prisma.ticketReport.update({
+      where: { id: req.params.reportId },
+      data: req.body
+    });
+    res.json(data);
+  } catch (error) { res.status(500).json({ error: 'Error' }); }
 });
 
 const PORT = process.env.PORT || 3001;

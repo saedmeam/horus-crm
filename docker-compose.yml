@@ -43,7 +43,7 @@ services:
         condition: service_healthy
     volumes:
       - uploads:/app/uploads
-    command: sh -c "until npx prisma db push >/dev/null 2>&1; do echo 'DB not ready, retrying...'; sleep 3; done; npm run seed || true; npm start"
+    command: sh -c "until npx prisma migrate deploy >/dev/null 2>&1 || npx prisma db push >/dev/null 2>&1; do echo 'DB not ready, retrying...'; sleep 3; done; npm run seed || true; npm run seed:helpdesk || true; npm start"
 
   frontend:
     build:
@@ -64,7 +64,7 @@ services:
     command:
       - "http"
       - "backend:3001"
-      - "--domain=knee-eclair-agnostic.ngrok-free.dev"
+      - "--url=https://knee-eclair-agnostic.ngrok-free.dev"
     environment:
       - NGROK_AUTHTOKEN=3JxtDqCfbHCcnL1RuB5cyDz6XKl_78jEYzGL2Nt1nszk2nNWh
     depends_on:
