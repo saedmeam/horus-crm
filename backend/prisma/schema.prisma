@@ -63,6 +63,7 @@ model User {
   lines            WhatsAppLine[]
   assignedContacts Contact[]
   conversations    Conversation[]
+  collaboratingIn  Conversation[] @relation("ConversationCollaborators")
   reminders        Reminder[]
   internalComments InternalComment[]
   messages         Message[]
@@ -117,6 +118,7 @@ model Conversation {
   stage            String             @default("NUEVO_LEAD")
   assignedUserId   String?
   assignedUser     User?              @relation(fields: [assignedUserId], references: [id])
+  collaborators    User[]             @relation("ConversationCollaborators")
   aiActive         Boolean            @default(true)
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt

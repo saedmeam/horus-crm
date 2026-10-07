@@ -135,6 +135,12 @@ export default function GlobalAlerts() {
           if (due) {
             localStorage.setItem('alerted_' + due.id, 'true');
             setActiveAlert(due);
+            setTimeout(() => {
+              setActiveAlert((currentAlert) => {
+                if (currentAlert && currentAlert.id === due.id) return null;
+                return currentAlert;
+              });
+            }, 5000);
 
             if (permission === 'granted') {
               new Notification('Recordatorio de Cliente', {
@@ -161,7 +167,7 @@ export default function GlobalAlerts() {
 
       {/* Alerta de recordatorio */}
       {activeAlert && (
-        <div className="fixed bottom-4 right-4 bg-white dark:bg-[#202c33] text-gray-800 dark:text-gray-100 p-4 rounded-xl shadow-2xl border border-blue-500 z-[9999] animate-bounce w-80">
+        <div className="fixed bottom-4 right-4 bg-white dark:bg-[#202c33] text-gray-800 dark:text-gray-100 p-4 rounded-xl shadow-2xl border border-blue-500 z-[9999] shadow-lg animate-fade-in-up w-80">
           <div className="flex items-center gap-3 mb-2">
             <div className="bg-red-500 text-white p-2 rounded-full">
               <Bell size={20} />

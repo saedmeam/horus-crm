@@ -697,6 +697,31 @@ app.post('/api/upload', authenticateToken, (req: any, res: any) => {
   });
 });
 
+
+// Actualizar colaboradores manualmente
+app.put('/api/conversations/:id/collaborators', authenticateToken, async (req: any, res: any) => {
+  try {
+    const { id } = req.params;
+    const { collaboratorIds } = req.body;
+    
+    const conversation = await prisma.conversation.update({
+      where: { id },
+      data: {
+        collaborators: {
+          set: collaboratorIds.map((cId: string) => ({ id: cId }))
+        }
+      },
+      include: { collaborators: true }
+    });
+    
+    io.emit('chat_collaborators_updated', { conversationId: id, collaborators: conversation.collaborators });
+    res.json(conversation);
+  } catch (err) {
+    console.error('Error updating collaborators', err);
+    res.status(500).json({ error: 'Error updating collaborators' });
+  }
+});
+
 app.get('/api/conversations', authenticateToken, async (req: any, res: any) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.user.id }, include: { lines: true, role: true } });
@@ -714,6 +739,7 @@ app.get('/api/conversations', authenticateToken, async (req: any, res: any) => {
       const whereClause = isAdmin ? {} : {
         OR: [
           { assignedUserId: user.id },
+          { collaborators: { some: { id: user.id } } },
           { 
             assignedUserId: null, 
             whatsappLineId: { in: lineIds }
@@ -729,6 +755,7 @@ app.get('/api/conversations', authenticateToken, async (req: any, res: any) => {
     const conversations = await prisma.conversation.findMany({
       where: whereClause,
       include: {
+        collaborators: true,
         contact: true,
         messages: { orderBy: { createdAt: 'desc' }, take: 1 },
         _count: {
@@ -858,7 +885,9 @@ app.post('/api/conversations/:id/messages', authenticateToken, async (req: any, 
 
     const conversation = await prisma.conversation.findUnique({
       where: { id },
-      include: { contact: true, whatsappLine: true }
+      include: {
+        collaborators: true,
+        contact: true, whatsappLine: true }
     });
     if (!conversation) return res.status(404).json({ error: 'Conversation not found' });
 
@@ -1310,7 +1339,10 @@ app.post('/webhook/whatsapp', async (req, res) => {
             }
 
             let conversation = await prisma.conversation.findFirst({
-              where: { contactId: contact.id },
+              where: { 
+                contactId: contact.id,
+                whatsappLineId: whatsappLine ? whatsappLine.id : null
+              },
               orderBy: { createdAt: 'desc' }
             });
 
@@ -1622,7 +1654,9 @@ app.get('/api/reminders/all', authenticateToken, async (req: any, res: any) => {
       return res.status(403).json({ error: 'No tienes permisos' });
     }
     const reminders = await prisma.reminder.findMany({
-      include: { contact: true, user: true },
+      include: {
+        collaborators: true,
+        contact: true, user: true },
       orderBy: { scheduledFor: 'desc' }
     });
     res.json(reminders);

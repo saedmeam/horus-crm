@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { io, Socket } from 'socket.io-client';
 import MainSidebar from '@/components/MainSidebar';
 import { Toaster, toast } from 'react-hot-toast';
-import { Send, Paperclip, Mic, UserPlus, Search, Info, Moon, Sun, X, Save, Settings, Bell, AlarmClock, Check, MessageSquare, Reply, FileText, UserCircle, ShoppingCart, Box, CheckCheck, Download, ChevronDown } from 'lucide-react';
+import { Send, Paperclip, Mic, UserPlus, Users, Search, Info, Moon, Sun, X, Save, Settings, Bell, AlarmClock, Check, MessageSquare, Reply, FileText, UserCircle, ShoppingCart, Box, CheckCheck, Download, ChevronDown } from 'lucide-react';
 
 
 // Make sure X and FileText are imported, they are on line 6.
@@ -52,6 +52,8 @@ export default function CRMChatLayout() {
   const [showMentionList, setShowMentionList] = useState(false);
   const [agents, setAgents] = useState<any[]>([]);
     const [showAssignDropdown, setShowAssignDropdown] = useState(false);
+  const [showCollabModal, setShowCollabModal] = useState(false);
+  const [collabSelection, setCollabSelection] = useState<string[]>([]);
   
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -132,6 +134,35 @@ const [showInfo, setShowInfo] = useState(false);
   const [contactIdentificacion, setContactIdentificacion] = useState('');
 
   
+  
+  const openCollabModal = () => {
+    if (!selectedChat) return;
+    setCollabSelection(selectedChat.collaborators?.map((c: any) => c.id) || []);
+    setShowCollabModal(true);
+  };
+
+  const handleSaveCollabs = async () => {
+    if (!selectedChat) return;
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}/api/conversations/${selectedChat.id}/collaborators`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': 'Bearer ' + localStorage.getItem('token'),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ collaboratorIds: collabSelection })
+      });
+      if (res.ok) {
+        setShowCollabModal(false);
+        // Optimistic update
+        const updatedCollabs = agents.filter(a => collabSelection.includes(a.id));
+        setSelectedChat((prev: any) => ({ ...prev, collaborators: updatedCollabs }));
+        setConversations(prev => prev.map(c => c.id === selectedChat.id ? { ...c, collaborators: updatedCollabs } : c));
+        toast.success('Colaboradores actualizados');
+      }
+    } catch(err) { console.error(err); }
+  };
+
   const handleAssignTo = async (userId: string | null) => {
     if (!selectedChat) return;
     try {
@@ -144,8 +175,16 @@ const [showInfo, setShowInfo] = useState(false);
         body: JSON.stringify({ assignedUserId: userId })
       });
       if (res.ok) {
-        setSelectedChat((prev: any) => ({ ...prev, assignedUserId: userId }));
-        setConversations(prev => prev.map(c => c.id === selectedChat.id ? { ...c, assignedUserId: userId } : c));
+        const u = JSON.parse(localStorage.getItem('user') || '{}');
+        const isAdmin = u.role === 'SUPERADMIN' || u.role === 'ADMIN';
+
+        if (!isAdmin && userId !== null && userId !== u.id) {
+          setSelectedChat(null);
+        } else {
+          setSelectedChat((prev: any) => prev ? { ...prev, assignedUserId: userId } : prev);
+        }
+        
+        fetchConversations();
         setShowAssignDropdown(false);
         toast.success(userId ? 'Chat asignado correctamente' : 'Chat liberado');
       }
@@ -351,7 +390,18 @@ const [showInfo, setShowInfo] = useState(false);
         }
       });
 
-      newSocket.on('chat_assigned', (data: any) => {
+      
+        newSocket.on('chat_collaborators_updated', (data: any) => {
+          fetchConversations(); // Recargar la lista para reflejar visibilidad
+          setSelectedChat((prev: any) => {
+            if (prev?.id === data.conversationId) {
+              return { ...prev, collaborators: data.collaborators };
+            }
+            return prev;
+          });
+        });
+
+        newSocket.on('chat_assigned', (data: any) => {
       const u = JSON.parse(localStorage.getItem('user') || '{}');
       const isAdmin = u.role === 'SUPERADMIN' || u.role === 'ADMIN';
       
@@ -467,20 +517,35 @@ const [showInfo, setShowInfo] = useState(false);
       .then(data => setMessages(data));
   };
 
-  // Abrir la conversación indicada por ?chat=... al cargar (para notificaciones nativas)
-  useEffect(() => {
-    if (conversations.length === 0) return;
-    const params = new URLSearchParams(window.location.search);
-    const chatId = params.get('chat');
-    if (!chatId) return;
-    const target = conversations.find((c: any) => c.id === chatId);
-    if (target) {
-      handleSelectChat(target);
-      const url = new URL(window.location.href);
-      url.searchParams.delete('chat');
-      window.history.replaceState({}, '', url.toString());
-    }
-  }, [conversations]);
+  // Abrir la conversacion indicada por URL al cargar
+    useEffect(() => {
+      if (conversations.length === 0) return;
+      const params = new URLSearchParams(window.location.search);
+      const chatId = params.get('chat');
+      const contactId = params.get('chatId') || params.get('contactId'); // GlobalAlerts uses chatId= contactId
+
+      let target = null;
+      if (chatId) {
+        target = conversations.find((c: any) => c.id === chatId);
+      } else if (contactId) {
+        const u = JSON.parse(localStorage.getItem('user') || '{}');
+        target = conversations.find((c: any) => c.contactId === contactId && c.assignedUserId === u.id);
+        if (!target) {
+          target = [...conversations]
+            .filter((c: any) => c.contactId === contactId)
+            .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0];
+        }
+      }
+
+      if (target) {
+        handleSelectChat(target);
+        const url = new URL(window.location.href);
+        url.searchParams.delete('chat');
+        url.searchParams.delete('chatId');
+        url.searchParams.delete('contactId');
+        window.history.replaceState({}, '', url.toString());
+      }
+    }, [conversations]);
 
     const handleInputChange = (e: any) => {
       const val = e.target.value;
@@ -871,30 +936,30 @@ const handleSelectMetaTemplate = (t: any) => {
               />
             </div>
             <div className="flex gap-1.5 mt-2 pb-2 flex-wrap relative z-50">
-                {['ALL', 'UNASSIGNED', 'OPEN'].map(s => (
+                {['ALL', 'ASSIGNED_TO_ME', 'UNASSIGNED'].map(s => (
                   <button key={s} onClick={() => { setStatusFilter(s); setIsFilterDropdownOpen(false); }} className={`px-2.5 py-1.5 rounded-full text-[13px] font-medium whitespace-nowrap transition-all duration-200 ${statusFilter === s ? 'bg-gray-200 text-gray-800 border border-transparent dark:bg-[#0a332c] dark:text-[#00a884]' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 dark:bg-[#202c33] dark:border-transparent dark:text-[#aebac1] dark:hover:bg-[#2A3942]'}`}>
-                    {s === 'ALL' ? 'Todos' : s === 'UNASSIGNED' ? 'Sin asignar' : 'Abiertos'}
+                    {s === 'ALL' ? 'Todos' : s === 'ASSIGNED_TO_ME' ? 'Asignados' : 'Sin asignar'}
                   </button>
                 ))}
                 
                 <div className="relative">
                   <button 
                     onClick={() => setIsFilterDropdownOpen(!isFilterDropdownOpen)}
-                    className={`px-2.5 py-1.5 rounded-full text-[13px] font-medium whitespace-nowrap transition-all duration-200 flex items-center gap-1 ${['PENDING', 'CLOSED'].includes(statusFilter) || isFilterDropdownOpen ? 'bg-gray-200 text-gray-800 border border-transparent dark:bg-[#0a332c] dark:text-[#00a884]' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 dark:bg-[#202c33] dark:border-transparent dark:text-[#aebac1] dark:hover:bg-[#2A3942]'}`}
+                    className={`px-2.5 py-1.5 rounded-full text-[13px] font-medium whitespace-nowrap transition-all duration-200 flex items-center gap-1 ${['OPEN', 'PENDING', 'CLOSED'].includes(statusFilter) || isFilterDropdownOpen ? 'bg-gray-200 text-gray-800 border border-transparent dark:bg-[#0a332c] dark:text-[#00a884]' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 dark:bg-[#202c33] dark:border-transparent dark:text-[#aebac1] dark:hover:bg-[#2A3942]'}`}
                   >
-                    {['PENDING', 'CLOSED'].includes(statusFilter) ? (statusFilter === 'PENDING' ? 'Pendientes' : 'Cerrados') : 'Más'}
+                    {['OPEN', 'PENDING', 'CLOSED'].includes(statusFilter) ? (statusFilter === 'OPEN' ? 'Abiertos' : statusFilter === 'PENDING' ? 'Pendientes' : 'Cerrados') : 'Más'}
                     <ChevronDown size={14} className="ml-1" />
                   </button>
                   
                   {isFilterDropdownOpen && (
                     <div className="absolute top-full mt-1 left-0 bg-white dark:bg-[#202c33] border border-gray-200 dark:border-gray-700 shadow-lg rounded-xl py-2 z-50 min-w-[140px]">
-                      {['PENDING', 'CLOSED'].map(s => (
+                      {['OPEN', 'PENDING', 'CLOSED'].map(s => (
                         <button
                           key={s}
                           onClick={() => { setStatusFilter(s); setIsFilterDropdownOpen(false); }}
                           className={`w-full text-left px-4 py-2 text-[13px] transition-colors ${statusFilter === s ? 'bg-gray-100 dark:bg-[#2A3942] text-gray-900 dark:text-white' : 'text-gray-700 dark:text-[#d1d7db] hover:bg-gray-50 dark:hover:bg-[#2A3942]'}`}
                         >
-                          {s === 'PENDING' ? 'Pendientes' : 'Cerrados'}
+                          {s === 'OPEN' ? 'Abiertos' : s === 'PENDING' ? 'Pendientes' : 'Cerrados'}
                         </button>
                       ))}
                     </div>
@@ -911,8 +976,13 @@ const handleSelectMetaTemplate = (t: any) => {
                 .filter((c: any) => {
                   const name = (c.contact?.name || c.contact?.phone || '').toLowerCase();
                   if (chatSearch && !name.includes(chatSearch.toLowerCase())) return false;
-                  if (statusFilter === 'UNASSIGNED' && c.assignedUserId) return false;
-                  if (statusFilter !== 'ALL' && statusFilter !== 'UNASSIGNED' && c.status !== statusFilter) return false;
+                  if (statusFilter === 'ASSIGNED_TO_ME') {
+                    if (c.assignedUserId !== user?.id) return false;
+                  } else if (statusFilter === 'UNASSIGNED') {
+                    if (c.assignedUserId) return false;
+                  } else if (statusFilter !== 'ALL') {
+                    if (c.status !== statusFilter) return false;
+                  }
                   return true;
                 })
                 .map((chat) => (
@@ -983,6 +1053,22 @@ const handleSelectMetaTemplate = (t: any) => {
                       <AlarmClock className="w-5 h-5" />
                     </button>
                     <div className="relative">
+      <button 
+        onClick={openCollabModal}
+        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors shadow-sm bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-400 dark:border-indigo-800 mr-2"
+        title="Gestionar Colaboradores"
+      >
+        <Users className="w-4 h-4" />
+        <span className="hidden sm:inline">Colaboradores</span>
+        {selectedChat?.collaborators?.length > 0 && (
+          <span className="bg-indigo-200 dark:bg-indigo-700 text-indigo-800 dark:text-indigo-200 px-1.5 py-0.5 rounded-full text-xs">
+            {selectedChat.collaborators.length}
+          </span>
+        )}
+      </button>
+    </div>
+    
+    <div className="relative">
     <button 
       onClick={() => {
         if (selectedChat?.assignedUserId) {
@@ -1470,10 +1556,10 @@ const handleSelectMetaTemplate = (t: any) => {
       
       {/* Alerta Activa de Recordatorio */}
       {activeAlert && (
-        <div className="fixed top-6 right-6 bg-white dark:bg-[#1f2c33] border-l-4 border-orange-500 rounded-xl shadow-2xl z-[200] w-80 overflow-hidden animate-bounce">
+        <div className="fixed top-6 right-6 bg-white dark:bg-[#1f2c33] border-l-4 border-orange-500 rounded-xl shadow-2xl z-[200] w-80 overflow-hidden shadow-2xl animate-fade-in-up">
           <div className="p-4">
             <div className="flex items-center gap-3 mb-2 text-orange-600 dark:text-orange-400">
-              <AlarmClock className="w-6 h-6 animate-pulse" />
+              <AlarmClock className="w-6 h-6" />
               <h3 className="font-bold text-lg">¡Recordatorio!</h3>
             </div>
             <p className="font-bold text-gray-800 dark:text-gray-100">{activeAlert.contact?.name || activeAlert.contact?.phone}</p>
@@ -1656,6 +1742,42 @@ const handleSelectMetaTemplate = (t: any) => {
                   <Send size={18} /> Enviar Plantilla
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Collab Modal */}
+      {showCollabModal && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-[#202c33] w-full max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="bg-indigo-600 p-4 text-white flex justify-between items-center shrink-0">
+              <h3 className="font-bold text-lg flex items-center gap-2"><Users className="w-5 h-5"/> Colaboradores del Chat</h3>
+              <button onClick={() => setShowCollabModal(false)} className="hover:bg-white/20 p-1.5 rounded-full transition"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-4 overflow-y-auto flex-1">
+              <p className="text-sm text-gray-600 dark:text-[#aebac1] mb-4">
+                Selecciona los usuarios que podrán ver y atender este chat sin cambiar la asignación principal.
+              </p>
+              <div className="space-y-2">
+                {agents.map(agent => (
+                  <label key={agent.id} className="flex items-center gap-3 p-3 border border-gray-200 dark:border-[#2a3942] rounded-lg hover:bg-gray-50 dark:hover:bg-[#2a3942] cursor-pointer transition">
+                    <input 
+                      type="checkbox" 
+                      className="w-5 h-5 accent-indigo-600 rounded"
+                      checked={collabSelection.includes(agent.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) setCollabSelection(p => [...p, agent.id]);
+                        else setCollabSelection(p => p.filter(id => id !== agent.id));
+                      }}
+                    />
+                    <span className="font-semibold text-gray-800 dark:text-gray-200">{agent.name}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="p-4 border-t border-gray-200 dark:border-[#2a3942] flex justify-end gap-2 shrink-0">
+              <button onClick={() => setShowCollabModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg dark:text-gray-300 dark:hover:bg-[#2a3942] font-semibold">Cancelar</button>
+              <button onClick={handleSaveCollabs} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold">Guardar</button>
             </div>
           </div>
         </div>
