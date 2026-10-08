@@ -10,7 +10,9 @@
     "postinstall": "prisma skills sync || exit 0",
     "seed": "ts-node prisma/seed.ts",
     "seed:helpdesk": "node scripts/seed-catalogs-json.js",
-    "seed:3d": "node scripts/seed-3d-orders.js"
+    "seed:3d": "node scripts/seed-3d-orders.js",
+    "seed:sm": "node scripts/seed-sm-tickets.js",
+    "seed:technicians": "node scripts/seed-technicians.js"
   },
   "keywords": [],
   "author": "",

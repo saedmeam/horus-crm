@@ -38,8 +38,8 @@ export default function MainSidebar({ user }: { user: any }) {
     { name: 'Chats', icon: MessageSquare, href: '/' },
     { name: 'Embudo (Kanban)', icon: LayoutDashboard, href: '/kanban' },
     { name: 'Mesa de Ayuda (SM)', icon: Activity, href: '/tickets-sm', line: 'SM' },
-    { name: 'Soporte 3D', icon: Printer, href: '/soporte-3d', line: '3D' },
-    { name: 'Órdenes de Compra', icon: Package, href: '/orden-compra', line: '3D' },
+    { name: 'Soporte Técnico (3D)', icon: Printer, href: '/soporte-3d', line: '3D' },
+    { name: 'Órdenes de Compra (3D)', icon: Package, href: '/orden-compra', line: '3D' },
     { name: 'Contactos', icon: Users, href: '/contacts' },
     { name: 'Configuración', icon: Settings, href: '/admin/notificaciones' },
   ];

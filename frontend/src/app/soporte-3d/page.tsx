@@ -96,7 +96,7 @@ export default function Page() {
           <div className="p-6">
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Soporte 3D</h1>
+          <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Soporte Técnico (3D)</h1>
           <p className="text-sm text-gray-500">Órdenes de soporte de la línea 3D.</p>
         </div>
         <div className="flex items-center gap-2">

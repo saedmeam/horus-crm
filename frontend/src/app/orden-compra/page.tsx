@@ -98,7 +98,7 @@ export default function Page() {
           <div className="p-6">
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Órdenes de Compra</h1>
+          <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Órdenes de Compra (3D)</h1>
           <p className="text-sm text-gray-500">Artículos/repuestos asociados a una orden 3D.</p>
         </div>
         <div className="flex items-center gap-2">
