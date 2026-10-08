@@ -2246,6 +2246,49 @@ app.put('/api/tickets/:id/reports/:reportId', authenticateToken, async (req: any
   } catch (error) { res.status(500).json({ error: 'Error' }); }
 });
 
+// --- ORDENES 3D (Soporte 3D - padre) ---
+app.get('/api/orders-3d', authenticateToken, async (req: any, res: any) => {
+  try {
+    const data = await prisma.serviceOrder3D.findMany({
+      include: { cliente: true, equipo: true, servicio: true, purchaseOrders: true },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(data);
+  } catch (e) { res.status(500).json({ error: 'Error' }); }
+});
+app.post('/api/orders-3d', authenticateToken, async (req: any, res: any) => {
+  try { const data = await prisma.serviceOrder3D.create({ data: req.body }); res.json(data); }
+  catch (e) { res.status(500).json({ error: 'Error' }); }
+});
+app.put('/api/orders-3d/:id', authenticateToken, async (req: any, res: any) => {
+  try { const data = await prisma.serviceOrder3D.update({ where: { id: req.params.id }, data: req.body }); res.json(data); }
+  catch (e) { res.status(500).json({ error: 'Error' }); }
+});
+app.delete('/api/orders-3d/:id', authenticateToken, async (req: any, res: any) => {
+  try { await prisma.serviceOrder3D.delete({ where: { id: req.params.id } }); res.json({ success: true }); }
+  catch (e) { res.status(500).json({ error: 'Error' }); }
+});
+
+// --- ORDENES DE COMPRA (hijos de una orden 3d) ---
+app.get('/api/purchase-orders', authenticateToken, async (req: any, res: any) => {
+  try {
+    const where: any = req.query.orderId ? { serviceOrderId: String(req.query.orderId) } : {};
+    const data = await prisma.purchaseOrder.findMany({ where, orderBy: { createdAt: 'desc' } });
+    res.json(data);
+  } catch (e) { res.status(500).json({ error: 'Error' }); }
+});
+app.post('/api/purchase-orders', authenticateToken, async (req: any, res: any) => {
+  try { const data = await prisma.purchaseOrder.create({ data: req.body }); res.json(data); }
+  catch (e) { res.status(500).json({ error: 'Error' }); }
+});
+app.put('/api/purchase-orders/:id', authenticateToken, async (req: any, res: any) => {
+  try { const data = await prisma.purchaseOrder.update({ where: { id: req.params.id }, data: req.body }); res.json(data); }
+  catch (e) { res.status(500).json({ error: 'Error' }); }
+});
+app.delete('/api/purchase-orders/:id', authenticateToken, async (req: any, res: any) => {
+  try { await prisma.purchaseOrder.delete({ where: { id: req.params.id } }); res.json({ success: true }); }
+  catch (e) { res.status(500).json({ error: 'Error' }); }
+});
 const PORT = process.env.PORT || 3001;
 
 const uploadExcel = multer({ dest: 'uploads/' });
@@ -2326,6 +2369,93 @@ app.post('/api/helpdesk/upload-excel', authenticateToken, uploadExcel.single('fi
         if (!type) continue;
         const existing = await prisma.helpdeskEtaType.findFirst({ where: { businessLine, type: String(type).trim() } });
         if (!existing) { await prisma.helpdeskEtaType.create({ data: { businessLine, code: String(row['Id Tipo ETA'] || ''), type: String(type).trim(), description: String(row['Descripcion'] || ''), service: String(row['Servicio'] || '') } }); count++; }
+      } else if (targetType === 'orders-3d') {
+        const code = String(row['codigo'] || row['code'] || row['Codigo'] || '').trim() || null;
+        const clientCode = String(row['cliente'] || row['Cliente'] || row['ID Cliente'] || '').trim();
+        const equipCode = String(row['equipo'] || row['Equipo'] || row['ID Equipo'] || '').trim();
+        const servCode = String(row['servicio'] || row['Servicio'] || row['Id Servicio'] || '').trim();
+        const client = clientCode ? await prisma.helpdeskClient.findFirst({ where: { code: clientCode } }) : null;
+        const equip = equipCode ? await prisma.helpdeskEquipment.findFirst({ where: { code: equipCode } }) : null;
+        const serv = servCode ? await prisma.helpdeskService.findFirst({ where: { code: servCode } }) : null;
+        const existing = code
+          ? await prisma.serviceOrder3D.findFirst({ where: { code } })
+          : await prisma.serviceOrder3D.findFirst({ where: { clienteId: client?.id || null, equipoId: equip?.id || null, servicioId: serv?.id || null } });
+        if (!existing) {
+          let fecha: any = null;
+          if (row['fecha']) { fecha = typeof row['fecha'] === 'number' ? new Date(Math.round((row['fecha'] - 25569) * 86400 * 1000)) : new Date(row['fecha']); }
+          await prisma.serviceOrder3D.create({ data: {
+            code,
+            fecha,
+            clienteId: client?.id || null,
+            equipoId: equip?.id || null,
+            servicioId: serv?.id || null,
+            asesor: String(row['asesor'] || ''),
+            compromiso: String(row['compromiso'] || '')
+          }});
+          count++;
+        }
+      } else if (targetType === 'purchase-orders') {
+        const ordenNo = String(row['OrdenNo'] || row['Nº Orden'] || '').trim();
+        if (!ordenNo) continue;
+        const existing = await prisma.purchaseOrder.findFirst({ where: { ordenNo } });
+        const id3dCode = String(row['ID 3d'] || row['Id3d'] || row['ID3D'] || row['Codigo 3d'] || '').trim();
+        const data: any = {
+          recepcion: String(row['Recepcion'] || ''),
+          observaciones: String(row['Observaciones'] || ''),
+          precio: String(row['Precio'] || ''),
+          abono: String(row['Abono'] || ''),
+          subtotal: String(row['Subtotal'] || ''),
+          nombreAsesor: String(row['Nombre Asesor'] || ''),
+          firmaCliente: String(row['Firma Cliente'] || ''),
+          revisadoPor: String(row['Revisado por'] || ''),
+          generarPdf: String(row['Generar PDF'] || ''),
+          video: String(row['Video'] || ''),
+          estado: String(row['Estado'] || ''),
+          tarea: String(row['Tarea'] || ''),
+          descripcionPresupuesto: String(row['Descripción de Presupuesto'] || ''),
+          presupuestoAprobado: String(row['Presupuesto Aprobado'] || ''),
+          precioPresupuesto: String(row['Precio Presupuesto'] || ''),
+          tiempoFinalizacion: String(row['Tiempo de finalización de Incidencia'] || ''),
+          servicioTipo: String(row['Servicio Tipo'] || ''),
+          asesorTipo: String(row['Asesor Tipo'] || ''),
+          diagnosticoRealizado: String(row['Diagnostico Realizado'] || ''),
+          tecnico: String(row['Tecnico'] || ''),
+          realizadoPor: String(row['Realizado por'] || ''),
+          vendedoraNegocia: String(row['Vendedora que negocia'] || ''),
+          servicioRealizado: String(row['Servicio realizado'] || ''),
+          cobrado: String(row['Cobrado'] || ''),
+          entregado: String(row['Entregado'] || ''),
+          cobradoPor: String(row['Cobrado por'] || ''),
+          entregadoPor: String(row['Entregado por'] || ''),
+          observacionProduccion: String(row['Observacion de produccion'] || ''),
+          observacionNegociacion: String(row['Observacion de Negociacion'] || '')
+        };
+        let fecha: any = null;
+        if (row['Fecha']) { fecha = typeof row['Fecha'] === 'number' ? new Date(Math.round((row['Fecha'] - 25569) * 86400 * 1000)) : new Date(row['Fecha']); }
+        data.fecha = fecha;
+        let parentId = '';
+        if (id3dCode) {
+          const parent = await prisma.serviceOrder3D.findFirst({ where: { code: id3dCode } });
+          if (parent) parentId = parent.id;
+        }
+        if (!parentId) {
+          const cCode = String(row['CI_RUC'] || '').trim();
+          const client = cCode ? await prisma.helpdeskClient.findFirst({ where: { code: cCode } }) : null;
+          if (client) {
+            const parent = await prisma.serviceOrder3D.findFirst({ where: { clienteId: client.id } });
+            if (parent) parentId = parent.id;
+          }
+        }
+        data.serviceOrderId = parentId;
+        if (existing) {
+          const updateData: any = { ...data };
+          if (!updateData.serviceOrderId) delete updateData.serviceOrderId;
+          await prisma.purchaseOrder.update({ where: { id: existing.id }, data: updateData });
+        } else {
+          if (!data.serviceOrderId) continue;
+          await prisma.purchaseOrder.create({ data: { ...data, ordenNo } });
+        }
+        count++;
       }
     }
     

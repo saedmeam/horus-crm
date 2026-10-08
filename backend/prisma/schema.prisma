@@ -294,6 +294,7 @@ model HelpdeskClient {
   tickets      Ticket[]
   reports      TicketReport[]
   equipments   HelpdeskEquipment[]
+  serviceOrders3D ServiceOrder3D[]
 }
 
 model HelpdeskEquipment {
@@ -312,6 +313,7 @@ model HelpdeskEquipment {
   clientId           String?
   businessLine       String    @default("SM")
   client             HelpdeskClient? @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  serviceOrders3D ServiceOrder3D[]
   createdAt          DateTime  @default(now())
 }
 
@@ -347,6 +349,7 @@ model HelpdeskService {
   description    String?  // Descripcion
   flow           String?  // Flujo asignado
   estimatedPrice String?  // Precio Estimado (3D)
+  serviceOrders3D ServiceOrder3D[]
   businessLine   String   @default("3D")
   createdAt      DateTime @default(now())
 }
@@ -392,6 +395,59 @@ model HelpdeskProvider {
   backorders   Backorder[]
 }
 
+model ServiceOrder3D {
+  id             String    @id @default(uuid())
+  code           String?   @unique
+  fecha          DateTime?
+  clienteId      String?
+  equipoId       String?
+  servicioId     String?
+  asesor         String?
+  compromiso     String?   // imagen (URL/ruta)
+  cliente        HelpdeskClient?    @relation(fields: [clienteId], references: [id])
+  equipo         HelpdeskEquipment? @relation(fields: [equipoId], references: [id])
+  servicio       HelpdeskService?   @relation(fields: [servicioId], references: [id])
+  purchaseOrders PurchaseOrder[]
+  createdAt      DateTime  @default(now())
+}
+
+model PurchaseOrder {
+  id                     String         @id @default(uuid())
+  serviceOrderId         String
+  serviceOrder           ServiceOrder3D @relation(fields: [serviceOrderId], references: [id], onDelete: Cascade)
+  ordenNo                String?
+  fecha                  DateTime?
+  recepcion              String?
+  observaciones          String?   @db.Text
+  precio                 String?
+  abono                  String?
+  subtotal               String?
+  nombreAsesor           String?
+  firmaCliente           String?
+  revisadoPor            String?
+  generarPdf             String?
+  video                  String?
+  estado                 String?
+  tarea                  String?
+  descripcionPresupuesto String?   @db.Text
+  presupuestoAprobado    String?
+  precioPresupuesto      String?
+  tiempoFinalizacion     String?
+  servicioTipo           String?
+  asesorTipo             String?
+  diagnosticoRealizado   String?   @db.Text
+  tecnico                String?
+  realizadoPor           String?
+  vendedoraNegocia       String?
+  servicioRealizado      String?
+  cobrado                String?
+  entregado              String?
+  cobradoPor             String?
+  entregadoPor           String?
+  observacionProduccion  String?   @db.Text
+  observacionNegociacion String?   @db.Text
+  createdAt              DateTime  @default(now())
+}
 model HelpdeskSparePart {
   id           String   @id @default(uuid())
   name         String
