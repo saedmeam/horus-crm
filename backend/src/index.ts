@@ -1,4 +1,6 @@
 import express from 'express';
+import * as xlsx from 'xlsx';
+
 import cors from 'cors';
 import dotenv from 'dotenv';
 import multer from 'multer';
@@ -518,7 +520,7 @@ app.post('/api/conversations/:id/template', authenticateToken, async (req: any, 
 
     const conversation = await prisma.conversation.findUnique({
       where: { id },
-      include: { contact: true }
+      include: { contact: true, whatsappLine: true }
     });
 
     if (!conversation) return res.status(404).json({ error: 'Conversacin no encontrada' });
@@ -552,8 +554,8 @@ app.post('/api/conversations/:id/template', authenticateToken, async (req: any, 
 
     // Llamada a WhatsApp API
     const creds = await getMetaCredentials();
-    const token = creds.whatsappToken || process.env.WHATSAPP_TOKEN;
-    const phoneNumberId = creds.phoneNumberId || process.env.DEFAULT_PHONE_NUMBER_ID || '';
+    const token = conversation.whatsappLine?.token || creds.whatsappToken || process.env.WHATSAPP_TOKEN;
+    const phoneNumberId = conversation.whatsappLine?.phoneNumberId || creds.phoneNumberId || process.env.DEFAULT_PHONE_NUMBER_ID || '';
     if (!token || !phoneNumberId) {
       return res.status(400).json({ error: 'Falta configurar Token o Phone Number ID en Configuración API' });
     }
@@ -601,7 +603,7 @@ app.put('/api/conversations/:id/assign', authenticateToken, async (req: any, res
     // Si assignedUserId es undefined, asumimos que es "asignarme a mi" por defecto (retrocompatibilidad)
     const targetUserId = assignedUserId !== undefined ? assignedUserId : req.user.id;
     
-    const existing = await prisma.conversation.findUnique({ where: { id }, include: { contact: true } });
+    const existing = await prisma.conversation.findUnique({ where: { id }, include: { contact: true, whatsappLine: true } });
     if (!existing) return res.status(404).json({ error: 'Conversation not found' });
 
     const conversation = await prisma.conversation.update({
@@ -672,6 +674,171 @@ app.delete('/api/roles/:id', authenticateToken, async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: 'Error deleting role' });
   }
+});
+
+
+// --- PARAMETERS ---
+
+app.get('/api/debug/parameters', async (req: any, res: any) => {
+  try {
+    const count = await prisma.parameter.count();
+    res.json({ success: true, count });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message, stack: error.stack });
+  }
+});
+
+app.get('/api/parameters', authenticateToken, async (req: any, res: any) => {
+  try {
+    // Auto-seed if empty
+    const count = await prisma.parameter.count();
+    if (count === 0) {
+      const defaults = [
+        { mnemonic: 'SISTEMA_PANTALLAS', name: 'Pantallas del Sistema', description: 'Opciones de menú' },
+        { mnemonic: 'CLIENTES_SM', name: 'Clientes SM', description: '' },
+        { mnemonic: 'CLIENTES_3D', name: 'Clientes 3D', description: '' },
+        { mnemonic: 'EQUIPOS_SM', name: 'Equipos SM', description: '' },
+        { mnemonic: 'EQUIPOS_3D', name: 'Equipos 3D', description: '' },
+        { mnemonic: 'INCIDENCIAS_SM', name: 'Tipos de Incidencia SM', description: '' },
+        { mnemonic: 'INCIDENCIAS_3D', name: 'Tipos de Incidencia 3D', description: '' },
+        { mnemonic: 'TAREAS_SM', name: 'Tipos de Tareas SM', description: '' },
+        { mnemonic: 'INCIDENCIAS_3D', name: 'Tipos de Tareas 3D', description: '' },
+        { mnemonic: 'PROVEEDORES_SM', name: 'Proveedores SM', description: '' },
+        { mnemonic: 'PROVEEDORES_3D', name: 'Proveedores 3D', description: '' },
+      ];
+      for (const item of defaults) {
+        await prisma.parameter.create({ data: { mnemonic: item.mnemonic, name: item.name, description: item.description, parentId: null } });
+      }
+    }
+
+    const parentId = req.query.parentId;
+    const mnemonic = req.query.mnemonic;
+    let whereClause: any = {};
+    if (parentId !== undefined) {
+      whereClause.parentId = parentId === '0' || parentId === '' || parentId === 'null' ? null : parentId;
+    }
+    if (mnemonic) {
+      whereClause.mnemonic = mnemonic;
+    }
+    const data = await prisma.parameter.findMany({ 
+      where: whereClause,
+      include: { children: true, parent: { select: { name: true } } },
+      orderBy: { name: 'asc' }
+    });
+    res.json(data);
+  } catch (error) { console.error(error); res.status(500).json({ error: 'Error' }); }
+});
+
+
+app.post('/api/parameters/migrate', authenticateToken, async (req: any, res: any) => {
+  try {
+    // Migrate Clients SM
+    const clientsSM = await prisma.helpdeskClient.findMany({ where: { businessLine: 'SM' } });
+    const parentClientSM = await prisma.parameter.findUnique({ where: { mnemonic: 'CLIENTES_SM' } });
+    if(parentClientSM) {
+      for (const c of clientsSM) {
+        const ex = await prisma.parameter.findFirst({ where: { parentId: parentClientSM.id, name: c.name } });
+        if (!ex) await prisma.parameter.create({ data: { parentId: parentClientSM.id, name: c.name, value: c.id } });
+      }
+    }
+    
+    // Migrate Clients 3D
+    const clients3D = await prisma.helpdeskClient.findMany({ where: { businessLine: '3D' } });
+    const parentClient3D = await prisma.parameter.findUnique({ where: { mnemonic: 'CLIENTES_3D' } });
+    if(parentClient3D) {
+      for (const c of clients3D) {
+        const ex = await prisma.parameter.findFirst({ where: { parentId: parentClient3D.id, name: c.name } });
+        if (!ex) await prisma.parameter.create({ data: { parentId: parentClient3D.id, name: c.name, value: c.id } });
+      }
+    }
+
+    // CLEANUP old flat equipments (if any were created under EQUIPOS_SM / 3D)
+    const eqRootSM = await prisma.parameter.findUnique({ where: { mnemonic: 'EQUIPOS_SM' } });
+    if (eqRootSM) await prisma.parameter.deleteMany({ where: { parentId: eqRootSM.id } });
+    const eqRoot3D = await prisma.parameter.findUnique({ where: { mnemonic: 'EQUIPOS_3D' } });
+    if (eqRoot3D) await prisma.parameter.deleteMany({ where: { parentId: eqRoot3D.id } });
+
+    // Migrate Equipments SM (Nested under Clients)
+    const eqSM = await prisma.helpdeskEquipment.findMany({ where: { businessLine: 'SM' } });
+    if(parentClientSM) {
+      for (const e of eqSM) {
+        const oldClient = e.clientId ? await prisma.helpdeskClient.findUnique({ where: { id: e.clientId } }) : null;
+        if (oldClient) {
+          const newClient = await prisma.parameter.findFirst({ where: { parentId: parentClientSM.id, name: oldClient.name } });
+          if (newClient) {
+            const ex = await prisma.parameter.findFirst({ where: { parentId: newClient.id, name: e.name } });
+            if (!ex) await prisma.parameter.create({ data: { parentId: newClient.id, name: e.name, description: e.brand } });
+          }
+        }
+      }
+    }
+
+    // Migrate Equipments 3D (Nested under Clients)
+    const eq3D = await prisma.helpdeskEquipment.findMany({ where: { businessLine: '3D' } });
+    if(parentClient3D) {
+      for (const e of eq3D) {
+        const oldClient = e.clientId ? await prisma.helpdeskClient.findUnique({ where: { id: e.clientId } }) : null;
+        if (oldClient) {
+          const newClient = await prisma.parameter.findFirst({ where: { parentId: parentClient3D.id, name: oldClient.name } });
+          if (newClient) {
+            const ex = await prisma.parameter.findFirst({ where: { parentId: newClient.id, name: e.name } });
+            if (!ex) await prisma.parameter.create({ data: { parentId: newClient.id, name: e.name, description: e.brand } });
+          }
+        }
+      }
+    }
+
+    // Migrate Incidents SM
+    const incSM = await prisma.helpdeskIncidentType.findMany({ where: { businessLine: 'SM' } });
+    const parentIncSM = await prisma.parameter.findUnique({ where: { mnemonic: 'INCIDENCIAS_SM' } });
+    if(parentIncSM) {
+      for (const i of incSM) {
+        const ex = await prisma.parameter.findFirst({ where: { parentId: parentIncSM.id, name: i.name } });
+        if (!ex) await prisma.parameter.create({ data: { parentId: parentIncSM.id, name: i.name, value: i.id } });
+      }
+    }
+
+    // Migrate Tasks SM
+    const taskSM = await prisma.helpdeskTaskType.findMany({ where: { businessLine: 'SM' } });
+    const parentTaskSM = await prisma.parameter.findUnique({ where: { mnemonic: 'TAREAS_SM' } });
+    if(parentTaskSM) {
+      for (const t of taskSM) {
+        const ex = await prisma.parameter.findFirst({ where: { parentId: parentTaskSM.id, name: t.name } });
+        if (!ex) await prisma.parameter.create({ data: { parentId: parentTaskSM.id, name: t.name, value: t.id } });
+      }
+    }
+    res.json({ success: true });
+  } catch(e) { console.error(e); res.status(500).json({ error: 'Error' }) }
+});
+
+app.post('/api/parameters', authenticateToken, async (req: any, res: any) => {
+  try {
+    let { parentId, mnemonic, name, value, description, numericValue, status, metadata } = req.body;
+    if (parentId === '0' || parentId === '') parentId = null;
+    const data = await prisma.parameter.create({ 
+      data: { parentId, mnemonic, name, value, description, numericValue: numericValue ? parseFloat(numericValue) : null, status: status || 'A', metadata: metadata || undefined }
+    });
+    res.json(data);
+  } catch (error) { res.status(500).json({ error: 'Error' }); }
+});
+
+app.put('/api/parameters/:id', authenticateToken, async (req: any, res: any) => {
+  try {
+    let { parentId, mnemonic, name, value, description, numericValue, status, metadata } = req.body;
+    if (parentId === '0' || parentId === '') parentId = null;
+    const data = await prisma.parameter.update({ 
+      where: { id: req.params.id },
+      data: { parentId, mnemonic, name, value, description, numericValue: numericValue ? parseFloat(numericValue) : null, status: status || 'A', metadata: metadata || undefined }
+    });
+    res.json(data);
+  } catch (error) { res.status(500).json({ error: 'Error' }); }
+});
+
+app.delete('/api/parameters/:id', authenticateToken, async (req: any, res: any) => {
+  try {
+    await prisma.parameter.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (error) { res.status(500).json({ error: 'Error' }); }
 });
 
 // --- Conversation Routes ---
@@ -1543,7 +1710,7 @@ app.get('/api/stats/dashboard', authenticateToken, async (req: any, res: any) =>
 // --- PEDIDOS (BACKORDERS) ---
 app.post('/api/backorders', authenticateToken, async (req: any, res: any) => {
   try {
-    const { contactId, productName, category, quantity, specification, notes } = req.body;
+    const { contactId, providerId, productName, category, quantity, specification, notes, metadata } = req.body;
     const backorder = await prisma.backorder.create({
       data: {
         contactId,
@@ -1604,7 +1771,7 @@ app.post('/api/reminders', authenticateToken, async (req: any, res: any) => {
         scheduledFor: new Date(scheduledFor),
         notes
       },
-      include: { contact: true }
+      include: { contact: true, whatsappLine: true }
     });
     // Emit to this specific user (or broadcast and frontend filters)
     io.emit('new_reminder', reminder);
@@ -1719,41 +1886,41 @@ app.put('/api/settings', authenticateToken, async (req: any, res: any) => {
 
 
 // --- HELPDESK CATALOGS ---
+
 app.get('/api/helpdesk/clients', authenticateToken, async (req: any, res: any) => {
   try {
-    const reqLine = req.query.line;
-    const userLine = req.user?.businessLine || 'SM';
-    let filterLine = userLine;
-    if (userLine === 'ALL' && reqLine) {
-      filterLine = reqLine;
-    }
-    const whereClause: any = filterLine === 'ALL' ? {} : { businessLine: filterLine };
-
-    const data = await prisma.helpdeskClient.findMany({ where: whereClause, include: { equipments: true } });
+    const line = req.query.line;
+    const where = line && line !== 'ALL' ? { businessLine: line } : {};
+    const data = await prisma.helpdeskClient.findMany({ where, orderBy: { name: 'asc' } });
     res.json(data);
-  } catch (error) { res.status(500).json({ error: 'Error' }); }
+  } catch (e) { res.status(500).json({error: 'Error'}) }
 });
-
 app.post('/api/helpdesk/clients', authenticateToken, async (req: any, res: any) => {
   try {
     const data = await prisma.helpdeskClient.create({ data: req.body });
     res.json(data);
   } catch (error) { res.status(500).json({ error: 'Error' }); }
 });
+app.put('/api/helpdesk/clients/:id', authenticateToken, async (req: any, res: any) => {
+  try {
+    const data = await prisma.helpdeskClient.update({ where: { id: req.params.id }, data: req.body });
+    res.json(data);
+  } catch (error) { res.status(500).json({ error: 'Error' }); }
+});
+app.delete('/api/helpdesk/clients/:id', authenticateToken, async (req: any, res: any) => {
+  try {
+    await prisma.helpdeskClient.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (error) { res.status(500).json({ error: 'Error' }); }
+});
 
 app.get('/api/helpdesk/equipments', authenticateToken, async (req: any, res: any) => {
   try {
-    const reqLine = req.query.line;
-    const userLine = req.user?.businessLine || 'SM';
-    let filterLine = userLine;
-    if (userLine === 'ALL' && reqLine) {
-      filterLine = reqLine;
-    }
-    const whereClause: any = filterLine === 'ALL' ? {} : { businessLine: filterLine };
-
-    const data = await prisma.helpdeskEquipment.findMany({ where: whereClause, include: { client: true } });
+    const line = req.query.line;
+    const where = line && line !== 'ALL' ? { businessLine: line } : {};
+    const data = await prisma.helpdeskEquipment.findMany({ where, include: { client: true }, orderBy: { name: 'asc' } });
     res.json(data);
-  } catch (error) { res.status(500).json({ error: 'Error' }); }
+  } catch (e) { res.status(500).json({error: 'Error'}) }
 });
 app.post('/api/helpdesk/equipments', authenticateToken, async (req: any, res: any) => {
   try {
@@ -1761,20 +1928,26 @@ app.post('/api/helpdesk/equipments', authenticateToken, async (req: any, res: an
     res.json(data);
   } catch (error) { res.status(500).json({ error: 'Error' }); }
 });
+app.put('/api/helpdesk/equipments/:id', authenticateToken, async (req: any, res: any) => {
+  try {
+    const data = await prisma.helpdeskEquipment.update({ where: { id: req.params.id }, data: req.body });
+    res.json(data);
+  } catch (error) { res.status(500).json({ error: 'Error' }); }
+});
+app.delete('/api/helpdesk/equipments/:id', authenticateToken, async (req: any, res: any) => {
+  try {
+    await prisma.helpdeskEquipment.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (error) { res.status(500).json({ error: 'Error' }); }
+});
 
 app.get('/api/helpdesk/incident-types', authenticateToken, async (req: any, res: any) => {
   try {
-    const reqLine = req.query.line;
-    const userLine = req.user?.businessLine || 'SM';
-    let filterLine = userLine;
-    if (userLine === 'ALL' && reqLine) {
-      filterLine = reqLine;
-    }
-    const whereClause: any = filterLine === 'ALL' ? {} : { businessLine: filterLine };
-
-    const data = await prisma.helpdeskIncidentType.findMany({ where: whereClause });
+    const line = req.query.line;
+    const where = line && line !== 'ALL' ? { businessLine: line } : {};
+    const data = await prisma.helpdeskIncidentType.findMany({ where, orderBy: { name: 'asc' } });
     res.json(data);
-  } catch (error) { res.status(500).json({ error: 'Error' }); }
+  } catch (e) { res.status(500).json({error: 'Error'}) }
 });
 app.post('/api/helpdesk/incident-types', authenticateToken, async (req: any, res: any) => {
   try {
@@ -1782,20 +1955,26 @@ app.post('/api/helpdesk/incident-types', authenticateToken, async (req: any, res
     res.json(data);
   } catch (error) { res.status(500).json({ error: 'Error' }); }
 });
+app.put('/api/helpdesk/incident-types/:id', authenticateToken, async (req: any, res: any) => {
+  try {
+    const data = await prisma.helpdeskIncidentType.update({ where: { id: req.params.id }, data: req.body });
+    res.json(data);
+  } catch (error) { res.status(500).json({ error: 'Error' }); }
+});
+app.delete('/api/helpdesk/incident-types/:id', authenticateToken, async (req: any, res: any) => {
+  try {
+    await prisma.helpdeskIncidentType.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (error) { res.status(500).json({ error: 'Error' }); }
+});
 
 app.get('/api/helpdesk/task-types', authenticateToken, async (req: any, res: any) => {
   try {
-    const reqLine = req.query.line;
-    const userLine = req.user?.businessLine || 'SM';
-    let filterLine = userLine;
-    if (userLine === 'ALL' && reqLine) {
-      filterLine = reqLine;
-    }
-    const whereClause: any = filterLine === 'ALL' ? {} : { businessLine: filterLine };
-
-    const data = await prisma.helpdeskTaskType.findMany({ where: whereClause });
+    const line = req.query.line;
+    const where = line && line !== 'ALL' ? { businessLine: line } : {};
+    const data = await prisma.helpdeskTaskType.findMany({ where, orderBy: { name: 'asc' } });
     res.json(data);
-  } catch (error) { res.status(500).json({ error: 'Error' }); }
+  } catch (e) { res.status(500).json({error: 'Error'}) }
 });
 app.post('/api/helpdesk/task-types', authenticateToken, async (req: any, res: any) => {
   try {
@@ -1803,39 +1982,138 @@ app.post('/api/helpdesk/task-types', authenticateToken, async (req: any, res: an
     res.json(data);
   } catch (error) { res.status(500).json({ error: 'Error' }); }
 });
-
-app.get('/api/tickets-next-id', authenticateToken, async (req: any, res: any) => {
+app.put('/api/helpdesk/task-types/:id', authenticateToken, async (req: any, res: any) => {
   try {
-    const last = await prisma.ticket.findFirst({ orderBy: { ticketNumber: 'desc' } });
-    let next = 1;
-    if (last?.ticketNumber) {
-      const num = parseInt(last.ticketNumber.replace(/\D/g, ''), 10);
-      if (!isNaN(num)) next = num + 1;
-    }
-    const nextId = `IDISM${String(next).padStart(4, '0')}`;
-    res.json({ nextId });
-  } catch (error) { res.status(500).json({ error: 'Error' }); }
-});
-
-
-
-// --- BACKORDERS API ---
-app.put('/api/backorders/:id', authenticateToken, async (req, res) => {
-  try {
-    const data = await prisma.backorder.update({ where: { id: req.params.id }, data: req.body });
+    const data = await prisma.helpdeskTaskType.update({ where: { id: req.params.id }, data: req.body });
     res.json(data);
   } catch (error) { res.status(500).json({ error: 'Error' }); }
 });
-
-app.delete('/api/backorders/:id', authenticateToken, async (req, res) => {
+app.delete('/api/helpdesk/task-types/:id', authenticateToken, async (req: any, res: any) => {
   try {
-    await prisma.backorder.delete({ where: { id: req.params.id } });
+    await prisma.helpdeskTaskType.delete({ where: { id: req.params.id } });
     res.json({ success: true });
   } catch (error) { res.status(500).json({ error: 'Error' }); }
 });
 
-// --- TICKETS API ---
-app.get('/api/tickets', authenticateToken, async (req: any, res: any) => {
+// --- RECEPCION ---
+app.get('/api/helpdesk/receptions', authenticateToken, async (req: any, res: any) => {
+  try {
+    const data = await prisma.helpdeskReception.findMany({ orderBy: { name: 'asc' } });
+    res.json(data);
+  } catch (e) { res.status(500).json({ error: 'Error' }); }
+});
+app.post('/api/helpdesk/receptions', authenticateToken, async (req: any, res: any) => {
+  try { const data = await prisma.helpdeskReception.create({ data: req.body }); res.json(data); }
+  catch (error) { res.status(500).json({ error: 'Error' }); }
+});
+app.put('/api/helpdesk/receptions/:id', authenticateToken, async (req: any, res: any) => {
+  try { const data = await prisma.helpdeskReception.update({ where: { id: req.params.id }, data: req.body }); res.json(data); }
+  catch (error) { res.status(500).json({ error: 'Error' }); }
+});
+app.delete('/api/helpdesk/receptions/:id', authenticateToken, async (req: any, res: any) => {
+  try { await prisma.helpdeskReception.delete({ where: { id: req.params.id } }); res.json({ success: true }); }
+  catch (error) { res.status(500).json({ error: 'Error' }); }
+});
+
+// --- SERVICIOS ---
+app.get('/api/helpdesk/services', authenticateToken, async (req: any, res: any) => {
+  try {
+    const line = req.query.line;
+    const where = line && line !== 'ALL' ? { businessLine: line } : {};
+    const data = await prisma.helpdeskService.findMany({ where, orderBy: { createdAt: 'desc' } });
+    res.json(data);
+  } catch (e) { res.status(500).json({ error: 'Error' }); }
+});
+app.post('/api/helpdesk/services', authenticateToken, async (req: any, res: any) => {
+  try { const data = await prisma.helpdeskService.create({ data: req.body }); res.json(data); }
+  catch (error) { res.status(500).json({ error: 'Error' }); }
+});
+app.put('/api/helpdesk/services/:id', authenticateToken, async (req: any, res: any) => {
+  try { const data = await prisma.helpdeskService.update({ where: { id: req.params.id }, data: req.body }); res.json(data); }
+  catch (error) { res.status(500).json({ error: 'Error' }); }
+});
+app.delete('/api/helpdesk/services/:id', authenticateToken, async (req: any, res: any) => {
+  try { await prisma.helpdeskService.delete({ where: { id: req.params.id } }); res.json({ success: true }); }
+  catch (error) { res.status(500).json({ error: 'Error' }); }
+});
+
+// --- TIPOS ETA ---
+app.get('/api/helpdesk/eta-types', authenticateToken, async (req: any, res: any) => {
+  try {
+    const line = req.query.line;
+    const where = line && line !== 'ALL' ? { businessLine: line } : {};
+    const data = await prisma.helpdeskEtaType.findMany({ where, orderBy: { createdAt: 'desc' } });
+    res.json(data);
+  } catch (e) { res.status(500).json({ error: 'Error' }); }
+});
+app.post('/api/helpdesk/eta-types', authenticateToken, async (req: any, res: any) => {
+  try { const data = await prisma.helpdeskEtaType.create({ data: req.body }); res.json(data); }
+  catch (error) { res.status(500).json({ error: 'Error' }); }
+});
+app.put('/api/helpdesk/eta-types/:id', authenticateToken, async (req: any, res: any) => {
+  try { const data = await prisma.helpdeskEtaType.update({ where: { id: req.params.id }, data: req.body }); res.json(data); }
+  catch (error) { res.status(500).json({ error: 'Error' }); }
+});
+app.delete('/api/helpdesk/eta-types/:id', authenticateToken, async (req: any, res: any) => {
+  try { await prisma.helpdeskEtaType.delete({ where: { id: req.params.id } }); res.json({ success: true }); }
+  catch (error) { res.status(500).json({ error: 'Error' }); }
+});
+app.get('/api/helpdesk/providers', authenticateToken, async (req: any, res: any) => {
+  try {
+    const line = req.query.line;
+    const where = line && line !== 'ALL' ? { businessLine: line } : {};
+    const data = await prisma.helpdeskProvider.findMany({ where, orderBy: { name: 'asc' } });
+    res.json(data);
+  } catch (e) { res.status(500).json({error: 'Error'}) }
+});
+app.post('/api/helpdesk/providers', authenticateToken, async (req: any, res: any) => {
+  try {
+    const data = await prisma.helpdeskProvider.create({ data: req.body });
+    res.json(data);
+  } catch (error) { res.status(500).json({ error: 'Error' }); }
+});
+app.put('/api/helpdesk/providers/:id', authenticateToken, async (req: any, res: any) => {
+  try {
+    const data = await prisma.helpdeskProvider.update({ where: { id: req.params.id }, data: req.body });
+    res.json(data);
+  } catch (error) { res.status(500).json({ error: 'Error' }); }
+});
+app.delete('/api/helpdesk/providers/:id', authenticateToken, async (req: any, res: any) => {
+  try {
+    await prisma.helpdeskProvider.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (error) { res.status(500).json({ error: 'Error' }); }
+});
+
+app.get('/api/helpdesk/spare-parts', authenticateToken, async (req: any, res: any) => {
+  try {
+    const line = req.query.line;
+    const where = line && line !== 'ALL' ? { businessLine: line } : {};
+    const data = await prisma.helpdeskSparePart.findMany({ where, orderBy: { name: 'asc' } });
+    res.json(data);
+  } catch (e) { res.status(500).json({error: 'Error'}) }
+});
+app.post('/api/helpdesk/spare-parts', authenticateToken, async (req: any, res: any) => {
+  try {
+    const data = await prisma.helpdeskSparePart.create({ data: req.body });
+    res.json(data);
+  } catch (error) { res.status(500).json({ error: 'Error' }); }
+});
+app.put('/api/helpdesk/spare-parts/:id', authenticateToken, async (req: any, res: any) => {
+  try {
+    const data = await prisma.helpdeskSparePart.update({ where: { id: req.params.id }, data: req.body });
+    res.json(data);
+  } catch (error) { res.status(500).json({ error: 'Error' }); }
+});
+app.delete('/api/helpdesk/spare-parts/:id', authenticateToken, async (req: any, res: any) => {
+  try {
+    await prisma.helpdeskSparePart.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (error) { res.status(500).json({ error: 'Error' }); }
+});
+
+
+  app.get('/api/tickets', authenticateToken, async (req: any, res: any) => {
   try {
     const reqLine = req.query.line;
     const userLine = req.user.businessLine || 'SM';
@@ -1917,6 +2195,1468 @@ app.put('/api/tickets/:id/reports/:reportId', authenticateToken, async (req: any
 });
 
 const PORT = process.env.PORT || 3001;
+
+const uploadExcel = multer({ dest: 'uploads/' });
+app.post('/api/helpdesk/upload-excel', authenticateToken, uploadExcel.single('file'), async (req: any, res: any) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const targetType = req.body.type;
+    const businessLine = req.body.line || 'SM';
+    const workbook = xlsx.readFile(req.file.path);
+    const sheetName = workbook.SheetNames[0];
+    const data = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName]);
+    let count = 0;
+
+    for (const row of data as any[]) {
+      if (targetType === 'clients') {
+        const name = row.Empresa_Nombres || row.Empresa || row.Nombre;
+        if (!name) continue;
+        const existing = await prisma.helpdeskClient.findFirst({ where: { businessLine, name: String(name).trim() } });
+        if (!existing) { 
+          await prisma.helpdeskClient.create({ data: { businessLine, name: String(name).trim(), cedula: String(row.Cedula || row.RUC || ''), lastNames: String(row.Apellidos || '') } }); 
+          count++; 
+        }
+      } else if (targetType === 'equipments') {
+        const name = row.Equipo_Sistema || row['Nombre Equipo'] || row.Equipo || row.Producto;
+        if (!name) continue;
+        
+        let clientId = null;
+        if (row.Cedula_Cliente || row.Cliente) {
+          const clientQuery = String(row.Cedula_Cliente || row.Cliente).trim();
+          const client = await prisma.helpdeskClient.findFirst({
+            where: { 
+              businessLine, 
+              OR: [ { cedula: clientQuery }, { name: clientQuery } ]
+            }
+          });
+          if (client) clientId = client.id;
+        }
+
+        const existing = await prisma.helpdeskEquipment.findFirst({ where: { businessLine, name: String(name).trim() } });
+        if (!existing) { 
+          await prisma.helpdeskEquipment.create({ data: { businessLine, name: String(name).trim(), brand: String(row.Marca || ''), model: String(row.Modelo || ''), serial: String(row.Serie || ''), clientId } }); 
+          count++; 
+        } else if (clientId && !existing.clientId) {
+          await prisma.helpdeskEquipment.update({ where: { id: existing.id }, data: { clientId } });
+        }
+      } else if (targetType === 'incident-types') {
+        const name = row.Nombre || row['Servicio a brindar'] || row.Incidencia;
+        if (!name) continue;
+        const existing = await prisma.helpdeskIncidentType.findFirst({ where: { businessLine, name: String(name).trim() } });
+        if (!existing) { await prisma.helpdeskIncidentType.create({ data: { businessLine, name: String(name).trim() } }); count++; }
+      } else if (targetType === 'task-types') {
+        const name = row.Nombre || row.Tarea;
+        if (!name) continue;
+        const existing = await prisma.helpdeskTaskType.findFirst({ where: { businessLine, name: String(name).trim() } });
+        if (!existing) { await prisma.helpdeskTaskType.create({ data: { businessLine, name: String(name).trim() } }); count++; }
+      } else if (targetType === 'providers') {
+        const name = row.Nombre || row.Proveedor || row.Empresa;
+        if (!name) continue;
+        const existing = await (prisma as any).helpdeskProvider.findFirst({ where: { businessLine, name: String(name).trim() } });
+        if (!existing) { await (prisma as any).helpdeskProvider.create({ data: { businessLine, name: String(name).trim() } }); count++; }
+      } else if (targetType === 'spare-parts') {
+        const name = row.Nombre || row.Repuesto || row.Producto;
+        if (!name) continue;
+        const existing = await (prisma as any).helpdeskSparePart.findFirst({ where: { businessLine, name: String(name).trim() } });
+        if (!existing) { await (prisma as any).helpdeskSparePart.create({ data: { businessLine, name: String(name).trim() } }); count++; }
+      } else if (targetType === 'receptions') {
+        const name = row['Nombre'];
+        if (!name) continue;
+        const existing = await prisma.helpdeskReception.findFirst({ where: { name: String(name).trim() } });
+        if (!existing) { await prisma.helpdeskReception.create({ data: { name: String(name).trim(), code: String(row['Id Recepcion'] || '') } }); count++; }
+      } else if (targetType === 'services') {
+        const type = row['Tipo'];
+        if (!type) continue;
+        const existing = await prisma.helpdeskService.findFirst({ where: { businessLine, type: String(type).trim() } });
+        if (!existing) { await prisma.helpdeskService.create({ data: { businessLine, code: String(row['Id Servicio'] || ''), type: String(type).trim(), description: String(row['Descripcion'] || ''), flow: String(row['Flujo asignado'] || ''), estimatedPrice: String(row['Precio Estimado'] || '') } }); count++; }
+      } else if (targetType === 'eta-types') {
+        const type = row['Tipo'];
+        if (!type) continue;
+        const existing = await prisma.helpdeskEtaType.findFirst({ where: { businessLine, type: String(type).trim() } });
+        if (!existing) { await prisma.helpdeskEtaType.create({ data: { businessLine, code: String(row['Id Tipo ETA'] || ''), type: String(type).trim(), description: String(row['Descripcion'] || ''), service: String(row['Servicio'] || '') } }); count++; }
+      }
+    }
+    
+    fs.unlinkSync(req.file.path);
+    res.json({ success: true, count });
+  } catch (error: any) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/run-dedup', async (req: any, res: any) => {
+  try {
+    const models = ['helpdeskClient', 'helpdeskEquipment', 'helpdeskIncidentType', 'helpdeskTaskType', 'helpdeskProvider', 'helpdeskSparePart'];
+    const results: Record<string, any> = {};
+
+    for (const modelName of models) {
+      const allRecords = await (prisma as any)[modelName].findMany();
+      const seen = new Map();
+      const toDelete = [];
+
+      for (const record of allRecords) {
+        const key = `${record.businessLine}_${record.name.trim().toLowerCase()}`;
+        if (seen.has(key)) {
+          toDelete.push(record.id);
+        } else {
+          seen.set(key, record.id);
+        }
+      }
+
+      if (toDelete.length > 0) {
+        for (const id of toDelete) {
+          try {
+            const record = allRecords.find((r: any) => r.id === id);
+            const keptId = seen.get(`${record.businessLine}_${record.name.trim().toLowerCase()}`);
+            
+            if (modelName === 'helpdeskClient') {
+              await prisma.ticket.updateMany({ where: { clientId: id }, data: { clientId: keptId } });
+              await prisma.helpdeskEquipment.updateMany({ where: { clientId: id }, data: { clientId: keptId } });
+            } else if (modelName === 'helpdeskEquipment') {
+              // equipmentId not in Ticket
+            } else if (modelName === 'helpdeskProvider') {
+              await prisma.backorder.updateMany({ where: { providerId: id }, data: { providerId: keptId } });
+            }
+            await (prisma as any)[modelName].delete({ where: { id } });
+          } catch (err) {
+            console.error(err);
+          }
+        }
+        results[modelName] = `Deleted ${toDelete.length} duplicates`;
+      } else {
+        results[modelName] = 'No duplicates found';
+      }
+    }
+    res.json({ success: true, results });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/run-seed', async (req: any, res: any) => {
+  try {
+    const data = {
+  "clientes": [
+    {
+      "ID Cliente": "IDCL3D0001",
+      "Cedula": "0923494298",
+      "Nombre": "GIANDRI SANIN",
+      "Apellidos": "MOREIRA RODRIGUEZ",
+      "Correo": "giandri_mr20@hotmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0980394225",
+      "Direccion": "AV. Carlos Guevera Moreno y Av.Jose de Antepara",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0002",
+      "Cedula": "0927307124001",
+      "Nombre": "Wilson Esteban",
+      "Apellidos": "Loor Murillo",
+      "Correo": "wilsonloor-m@hotmail.com",
+      "Telefono": "0939450004",
+      "Direccion": "Guayaquil",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0003",
+      "Cedula": "0993101907001",
+      "Empresa": "Laserdeco S.A.",
+      "Nombre": "Laserdeco S.A.",
+      "Apellidos": "Jorge Muñoz",
+      "Correo": "administracion@laserdecoec.ec",
+      "Ciudad": "Guayas",
+      "Telefono": "0969527739",
+      "Direccion": "Guayaquil",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0004",
+      "Cedula": "0927537738",
+      "Nombre": "Christian Xavier",
+      "Apellidos": "Cruz Malusin",
+      "Correo": "christiancruks@hotmail.com",
+      "Telefono": "0988184096",
+      "Direccion": "Guayaquil",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0005",
+      "Cedula": "0993069876001",
+      "Empresa": "Centro Educativo Jean Piaget",
+      "Correo": "albohispano.jeanpiaget@gmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0982858325",
+      "Direccion": "Guayacanes 3ra Etapa - MZ 97 - 97A",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0006",
+      "Cedula": "0931475651",
+      "Nombre": "Luis Xavier",
+      "Apellidos": "Cueva Zuñiga",
+      "Correo": "luiscuevaz@hotmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0992890871",
+      "Direccion": "Sauces 2 Mz F114 V81",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0007",
+      "Cedula": "0931885040",
+      "Nombre": "Romero Ricardo",
+      "Apellidos": "Leon De La Torre",
+      "Correo": "ricardoleon2602@gmaul.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0987976668",
+      "Direccion": "Alborada 10ma etapa",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0008",
+      "Cedula": "0911248979001",
+      "Nombre": "Ruth Asuncion",
+      "Apellidos": "Aviles Peñafiel",
+      "Correo": "asuncionaviles1@gmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0969315872",
+      "Direccion": "Guayaquil",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0009",
+      "Cedula": "0925680761",
+      "Nombre": "Luis Jeremy",
+      "Apellidos": "Baño Medina",
+      "Correo": "luisitobm123@hotmail.com",
+      "Telefono": "0980690185",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0010",
+      "Cedula": "0993391160001",
+      "Empresa": "DNAOMI ODONTOLOGIA MEDICO INTEGRAL S.A.S.",
+      "Nombre": "Christian",
+      "Apellidos": "Barco",
+      "Correo": "barcodental.lab@gmail.com",
+      "Ciudad": "Guayaquil",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0011",
+      "Cedula": "0103393609001",
+      "Nombre": "Raul Alejandro",
+      "Apellidos": "Guerra Goes",
+      "Correo": "info@guerragoes.com",
+      "Telefono": "0997106700",
+      "Direccion": "Guayaquil, Km 12 Vía Samborondón",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0012",
+      "Cedula": "0920232147",
+      "Nombre": "Bolivar Alejandro",
+      "Apellidos": "Mosquera Barrera",
+      "Correo": "skyledecuador@gmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0988690909",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0013",
+      "Cedula": "0928876986",
+      "Nombre": "Joel Alexander",
+      "Apellidos": "Parada Campoverde",
+      "Correo": "paradajoel16@gmail.com",
+      "Telefono": "0994220480",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0014",
+      "Cedula": "0927919910001",
+      "Nombre": "María Lorena",
+      "Apellidos": "Berardo Galvan",
+      "Correo": "marialorenaberardo@gmail.com",
+      "Telefono": "0959094445",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0015",
+      "Cedula": "1759400961001",
+      "Nombre": "Jose Manuel",
+      "Apellidos": "Rincon Perez",
+      "Correo": "navysmilelaboratoriodental@gmail.com",
+      "Telefono": "0969471312",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0016",
+      "Cedula": "0993379565001",
+      "Empresa": "SMARTCAMPS S.A.S.",
+      "Nombre": "SMARTCAMPS S.A.S.",
+      "Apellidos": "SMARTCAMPS S.A.S.",
+      "Correo": "smartcamp.ec@gmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0994113513",
+      "Direccion": "Vía a la Costa Km 13 C.C. Bluecoast local 31 planta alta",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0017",
+      "Cedula": "0916483696001",
+      "Nombre": "Ronald Jonnathan",
+      "Apellidos": "Fuentes Jaramillo",
+      "Correo": "ronaldfuentes_2005@hotmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0995583749",
+      "Direccion": "Kenedy Norte",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0018",
+      "Cedula": "0400758439",
+      "Nombre": "Mayra",
+      "Apellidos": "Marilanda Villarreal",
+      "Correo": "mayravillarreal2010@hotmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0987758941",
+      "Direccion": "Av. Francisco Orellena",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0019",
+      "Cedula": "0702610098",
+      "Nombre": "Aldo Rodrigo",
+      "Apellidos": "Martinez Barrera",
+      "Correo": "armb1221@gmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0987612454",
+      "Direccion": "Ciudad Celeste",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0020",
+      "Cedula": "0911280188",
+      "Nombre": "Bernando José",
+      "Apellidos": "Henriques Sayago",
+      "Correo": "bhenriques@gmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0986947315",
+      "Direccion": "Ceibos",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0021",
+      "Cedula": "1804376240",
+      "Nombre": "Hugo Xavier",
+      "Apellidos": "Alvarez Saltos",
+      "Correo": "hugoxavieralvarezsaltos@gmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0992614707",
+      "Direccion": "Km 34.5 Via la Costa",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0022",
+      "Cedula": "1205790502",
+      "Nombre": "Victor Antonio",
+      "Apellidos": "Armijos Laniz",
+      "Correo": "victorarmijoslaniz@hotmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0985969587",
+      "Direccion": "Babahoyo",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0023",
+      "Cedula": "0929467363",
+      "Nombre": "Eduardo Antonio",
+      "Apellidos": "Bazurto Rodríguez",
+      "Correo": "bazurtoeduardo97@gmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0993557948",
+      "Direccion": "Duran cope ejército",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0024",
+      "Cedula": "0922617030",
+      "Nombre": "Xavier Andres",
+      "Apellidos": "Coello Aguilera",
+      "Correo": "xcaguilera88@gmail.com",
+      "Ciudad": "Milagro",
+      "Telefono": "0968712318",
+      "Direccion": "Milagro",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0025",
+      "Cedula": "0931916178",
+      "Nombre": "Ney Salomon",
+      "Apellidos": "Alava Rosado",
+      "Correo": "neyalava98@gmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0999634876",
+      "Direccion": "Samanes 2",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0026",
+      "Cedula": "0956733729",
+      "Nombre": "Christopher Eliux",
+      "Apellidos": "Villegas Triviño",
+      "Correo": "eliux_11villegas@hotmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0987583744",
+      "Direccion": "San Felipe",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0027",
+      "Cedula": "0958732489",
+      "Nombre": "Elkin David",
+      "Apellidos": "Bastidas Triana",
+      "Correo": "basco.dental@gmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "09611660025",
+      "Direccion": "Circunvalación Sur entre Ficus y Guayacanes",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0028",
+      "Cedula": "0904885068",
+      "Nombre": "Angel Rogelio",
+      "Apellidos": "Benavides Brito",
+      "Correo": "britoangelrojo@hotmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0959900736",
+      "Direccion": "Bloques del seguro y Av Quito",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0029",
+      "Cedula": "0922536164",
+      "Nombre": "Carlos Alberto",
+      "Apellidos": "Rodas Pazmiño",
+      "Correo": "carlos.rodas@cnel.gob.ec",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0969687428",
+      "Direccion": "Mucho lote 2 paraiso del rio 1",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0030",
+      "Cedula": "0993069876001",
+      "Empresa": "Centro Educativo Jean Piaget Cia. Ltda",
+      "Nombre": "Centro Educativo Jean Piaget Cia. Ltda",
+      "Apellidos": "Centro Educativo Jean Piaget Cia. Ltda",
+      "Correo": "albohispano.jeanpiaget@gmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0982858325",
+      "Direccion": "Guayacanes 3ra Etapa - MZ 97 - 97A",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0031",
+      "Cedula": "120238456",
+      "Nombre": "Danilo",
+      "Apellidos": "Peña Ochoa",
+      "Correo": "joelpe8a@gmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0984553730",
+      "Direccion": "Alborada 6",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0032",
+      "Cedula": "0930220207",
+      "Nombre": "Tyrone Andres",
+      "Apellidos": "Toala Delgado",
+      "Correo": "dandrest93@gmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0978676783",
+      "Direccion": "Urdesa",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0033",
+      "Cedula": "0923770887",
+      "Nombre": "Pamela Estefany",
+      "Apellidos": "Moreno Patiño",
+      "Correo": "pam.morenop@gmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0991647191",
+      "Direccion": "Guayacanes mz 237 v 14",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0034",
+      "Cedula": "09544248100",
+      "Nombre": "Adrian Andres",
+      "Apellidos": "Vera Basurto",
+      "Correo": "adrianandresverabasurto@gmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0978708309",
+      "Direccion": "11 y General Gomez",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0035",
+      "Cedula": "0909557068",
+      "Nombre": "Oswaldo Fabricio",
+      "Apellidos": "Moran Hermosilla",
+      "Correo": "oswaldomora@hotmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0996464666",
+      "Direccion": "Sucre 424 y chimborazo",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0036",
+      "Cedula": "0963672357",
+      "Nombre": "Sainner Mariver",
+      "Apellidos": "Salas Moreno",
+      "Correo": "ssalas.ec@gmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0962546939",
+      "Direccion": "Urb. La Rioja",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0037",
+      "Cedula": "1804848420001",
+      "Nombre": "Andrés Sebastián",
+      "Apellidos": "Rivera Sánchez",
+      "Correo": "sebandy126@hotmail.com",
+      "Ciudad": "Ambato",
+      "Telefono": "0995755462",
+      "Direccion": "Ambato",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0038",
+      "Cedula": "0908580483",
+      "Nombre": "Guillermo Virgilio",
+      "Apellidos": "Silva Bazan",
+      "Correo": "Guillesilva2005@gmail.com",
+      "Ciudad": "Santa Elena",
+      "Telefono": "0967581271",
+      "Direccion": "La Libertad",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0039",
+      "Cedula": "0915515886",
+      "Nombre": "Francisco",
+      "Apellidos": "Velasquez",
+      "Correo": "fjvlsqzp@gmail.com",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0040",
+      "Cedula": "0930585260",
+      "Nombre": "Mauro",
+      "Apellidos": "Alcivar Manzo",
+      "Correo": "mauroalcivarmanzo@gmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0998924199",
+      "Direccion": "Guayaquil",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0041",
+      "Cedula": "0917372161",
+      "Nombre": "Marcia Elizabeth",
+      "Apellidos": "Juanazo Paucar",
+      "Correo": "ing.confiabilidad@hotmail.es",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0988771846",
+      "Direccion": "Villa Club",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0042",
+      "Cedula": "0918783556",
+      "Nombre": "Mishel Gabriela",
+      "Apellidos": "Rosas Vallejos",
+      "Correo": "rosas.mishel@yahoo.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0996317873",
+      "Direccion": "Guayaquil",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0043",
+      "Cedula": "0956733729",
+      "Nombre": "Cristopher Eliux",
+      "Apellidos": "Villegas Triviño",
+      "Correo": "eliux_11villegas@hotmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0987583744",
+      "Direccion": "San Felipe",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0044",
+      "Cedula": "0992255668001",
+      "Empresa": "UNIDAD EDUCATIVA PARTICULAR SAN LUIS REY DE FRANCIA",
+      "Nombre": "UNIDAD EDUCATIVA PARTICULAR SAN LUIS REY DE FRANCIA",
+      "Apellidos": "UNIDAD EDUCATIVA PARTICULAR SAN LUIS REY DE FRANCIA",
+      "Correo": "colecturia@sanluisreydefrancia.edu.ec",
+      "Ciudad": "Guayaquil",
+      "Telefono": "042478640",
+      "Direccion": "ARGENTINA #4419 entre salinas (18ava) y Samborondon (19ava), Guayaquil",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0045",
+      "Cedula": "0940905508",
+      "Nombre": "OSCAR ALFONSO",
+      "Apellidos": "MENDOZA BALON",
+      "Correo": "mendozaoscar362@gmail.com",
+      "Ciudad": "Guayaquil +",
+      "Telefono": "0982241176",
+      "Direccion": "Sauces 3",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0046",
+      "Cedula": "0952226074",
+      "Nombre": "Jonathan Steven",
+      "Apellidos": "Vélez Manzaba",
+      "Correo": "jsvm159@gmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0991713274",
+      "Direccion": "12 y cedalana",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0047",
+      "Cedula": "0910939461",
+      "Nombre": "SANDRA MIRELLA",
+      "Apellidos": "GARCIA GARAICOA",
+      "Correo": "sandragarcia67@hotmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0990252482",
+      "Direccion": "Alborada",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0048",
+      "Cedula": "0922533922",
+      "Nombre": "Ricardo Alberto",
+      "Apellidos": "Torres Carbo",
+      "Correo": "ricardo_torrescarbo@hotmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0985920246",
+      "Direccion": "Sauces 4",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0049",
+      "Cedula": "0923507354",
+      "Nombre": "Manuel Andres",
+      "Apellidos": "Ochoa Galarza",
+      "Correo": "andresxxx3000@gmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0993913496",
+      "Direccion": "Guayaquil",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0050",
+      "Cedula": "1301595557",
+      "Nombre": "Maria Elena",
+      "Apellidos": "Moreira Garcia",
+      "Correo": "titamoreirag@gmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "098861085",
+      "Direccion": "Guayaquil",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0051",
+      "Cedula": "0954574729",
+      "Nombre": "Gladys Isabel",
+      "Apellidos": "Bueno Aguirre",
+      "Correo": "isabelstore.ec@gmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0959745481",
+      "Direccion": "av quito y letamendi",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0052",
+      "Cedula": "0914630140",
+      "Nombre": "Ney Ricardo",
+      "Apellidos": "Palma Castillo",
+      "Correo": "ney_palma@yahoo.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0997570184",
+      "Direccion": "Garzota",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0053",
+      "Cedula": "09251202030",
+      "Empresa": "Jose Vera",
+      "Nombre": "Jose Vera",
+      "Apellidos": "Jose Vera",
+      "Correo": "josefvd@icloud.com",
+      "Telefono": "0993170355",
+      "Direccion": "Samborondon Urb . El Cortijo",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0054",
+      "Cedula": "2450092412",
+      "Nombre": "Belen Estefania",
+      "Apellidos": "Orrala Mendez",
+      "Correo": "b.orralamendez@gmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0962183828",
+      "Direccion": "Guayacanes mz87 v 8",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0055",
+      "Cedula": "1707229025",
+      "Nombre": "MARIA SOLEDAD",
+      "Apellidos": "REGALADO BENAVIDES",
+      "Correo": "soleregalado@gmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0999213399",
+      "Direccion": "Samborondon km 2,5  Urbanización Central Park",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0056",
+      "Cedula": "1315491850",
+      "Nombre": "Pedro Carlos",
+      "Apellidos": "Quiroz Cedeño",
+      "Correo": "pcquirozc@gmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0963247386",
+      "Direccion": "Cuidadela pajaro azul",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0057",
+      "Cedula": "0704105360",
+      "Nombre": "Jessica Lady",
+      "Apellidos": "Morocho Burgos",
+      "Correo": "jemobu@hotmail.com",
+      "Ciudad": "Machala",
+      "Telefono": "0958926465",
+      "Direccion": "Machala",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0058",
+      "Cedula": "0705697928",
+      "Nombre": "Flanklin Javier",
+      "Apellidos": "Armijos Aguilar",
+      "Correo": "djjavierarmijos@gmail.com",
+      "Ciudad": "Machala",
+      "Telefono": "0979838361",
+      "Direccion": "El Pasaje",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0059",
+      "Cedula": "0603579384001",
+      "Nombre": "Byron Stalin",
+      "Apellidos": "Escudero Mata",
+      "Correo": "dr.byronescudero@gmail.com",
+      "Ciudad": "Riobamba",
+      "Telefono": "0992384467",
+      "Direccion": "Riobamba",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0060",
+      "Cedula": "0927530493",
+      "Nombre": "Hector Alexander",
+      "Apellidos": "Pesantez Cepeda",
+      "Correo": "alex_pesa_88@hotmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0986491936",
+      "Direccion": "Via la costa",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0061",
+      "Cedula": "0916653462",
+      "Nombre": "Rafael Arturo",
+      "Apellidos": "Alcívar Miranda",
+      "Correo": "rafael.alcivar@gmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0987413777",
+      "Direccion": "Guayaquil",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0062",
+      "Cedula": "0705158400",
+      "Nombre": "Christian Andres",
+      "Apellidos": "Luzuriaga Jarre",
+      "Correo": "luzu_18@hotmail.com",
+      "Ciudad": "Machala",
+      "Telefono": "0980709117",
+      "Direccion": "Machala",
+      "Linea de Negocio": "3D"
+    },
+    {
+      "ID Cliente": "IDCL3D0063",
+      "Cedula": "0930404827",
+      "Nombre": "Alfonso Dioniso",
+      "Apellidos": "Espinoza Moran",
+      "Correo": "ponchoaem@gmail.com",
+      "Ciudad": "Guayaquil",
+      "Telefono": "0999670010",
+      "Direccion": "Ciudadela El Rio 2",
+      "Linea de Negocio": "3D"
+    }
+  ],
+  "equipos": [
+    {
+      "ID Equipo": "IDE3D0001",
+      "ID Cliente": "IDCL3D0001",
+      "Nombre Equipo": "Magician",
+      "Modelo": "X2 3D printer",
+      "Marca": "Mingda",
+      "Serie": "MX22316A0800022"
+    },
+    {
+      "ID Equipo": "IDE3D0002",
+      "ID Cliente": "IDCL3D0005",
+      "Nombre Equipo": "Impresora 3D Filamento",
+      "Modelo": "Genius pro",
+      "Marca": "Artillery",
+      "Serie": "GP18082025JP"
+    },
+    {
+      "ID Equipo": "IDE3D0003",
+      "ID Cliente": "IDCL3D0008",
+      "Nombre Equipo": "SLA",
+      "Modelo": "Halot r6",
+      "Marca": "Creality",
+      "Serie": "IRC22082025"
+    },
+    {
+      "ID Equipo": "IDE3D0004",
+      "ID Cliente": "IDCL3D0009",
+      "Nombre Equipo": "FDM",
+      "Modelo": "MK3 S",
+      "Marca": "PRUSA"
+    },
+    {
+      "ID Equipo": "IDE3D0005",
+      "ID Cliente": "IDCL3D0010",
+      "Nombre Equipo": "SLA",
+      "Modelo": "Halot One",
+      "Marca": "Creality"
+    },
+    {
+      "ID Equipo": "IDE3D0006",
+      "ID Cliente": "IDCL3D0011",
+      "Nombre Equipo": "SLA",
+      "Modelo": "ELEGOO"
+    },
+    {
+      "ID Equipo": "IDE3D0007",
+      "ID Cliente": "IDCL3D0012",
+      "Nombre Equipo": "FDM",
+      "Modelo": "DELTA",
+      "Marca": "SeeMeCNC"
+    },
+    {
+      "ID Equipo": "IDE3D0008",
+      "ID Cliente": "IDCL3D0013",
+      "Nombre Equipo": "FDM",
+      "Modelo": "KOBRA 2",
+      "Marca": "ANYCUBIC"
+    },
+    {
+      "ID Equipo": "IDE3D0009",
+      "ID Cliente": "IDCL3D0014",
+      "Nombre Equipo": "SLA",
+      "Modelo": "Photon X6KS",
+      "Marca": "Anycubic"
+    },
+    {
+      "ID Equipo": "IDE3D0010",
+      "ID Cliente": "IDCL3D0015",
+      "Nombre Equipo": "SLA",
+      "Modelo": "HALOT MAGE S",
+      "Marca": "CREALITY"
+    },
+    {
+      "ID Equipo": "IDE3D0011",
+      "ID Cliente": "IDCL3D0016",
+      "Nombre Equipo": "FDM",
+      "Modelo": "A1",
+      "Marca": "BAMBULAB"
+    },
+    {
+      "ID Equipo": "IDE3D0012",
+      "ID Cliente": "IDCL3D0017",
+      "Nombre Equipo": "Impresora 3D SLA",
+      "Modelo": "Saturn 3 ultra",
+      "Marca": "Elegoo",
+      "Serie": "219239194"
+    },
+    {
+      "ID Equipo": "IDE3D0013",
+      "ID Cliente": "IDCL3D0018",
+      "Nombre Equipo": "Impresora FDM",
+      "Modelo": "Ender 3 V2",
+      "Marca": "Creality",
+      "Serie": "12211001020084"
+    },
+    {
+      "ID Equipo": "IDE3D0014",
+      "ID Cliente": "IDCL3D0018",
+      "Nombre Equipo": "Impresora FDM",
+      "Modelo": "Ender 3 V2",
+      "Marca": "Creality",
+      "Serie": "12391001020084"
+    },
+    {
+      "ID Equipo": "IDE3D0015",
+      "ID Cliente": "IDCL3D0019",
+      "Nombre Equipo": "FDM",
+      "Modelo": "K1 MAX",
+      "Marca": "CREALITY",
+      "Serie": "100006481715824ANLX"
+    },
+    {
+      "ID Equipo": "IDE3D0016",
+      "ID Cliente": "IDCL3D0015",
+      "Nombre Equipo": "Anycubic SLA",
+      "Modelo": "Photon Mono M5S Pro",
+      "Marca": "Anycubic"
+    },
+    {
+      "ID Equipo": "IDE3D0017",
+      "ID Cliente": "IDCL3D0020",
+      "Nombre Equipo": "CREALITY SLA",
+      "Modelo": "Creality Ld006",
+      "Marca": "Creality Ld006"
+    },
+    {
+      "ID Equipo": "IDE3D0018",
+      "ID Cliente": "IDCL3D0021",
+      "Nombre Equipo": "BAMBU LAB A1",
+      "Modelo": "A1",
+      "Marca": "BAMBULAB"
+    },
+    {
+      "ID Equipo": "IDE3D0019",
+      "ID Cliente": "IDCL3D0022",
+      "Nombre Equipo": "Creality Ender 3 V3 SE",
+      "Modelo": "Ender 3 V3 SE",
+      "Marca": "Creality",
+      "Serie": "1000078502335245EDV"
+    },
+    {
+      "ID Equipo": "IDE3D0020",
+      "ID Cliente": "IDCL3D0019",
+      "Nombre Equipo": "IMPRESORA 3D FDM",
+      "Modelo": "SNAP",
+      "Marca": "MAKER",
+      "Serie": "SM18092025"
+    },
+    {
+      "ID Equipo": "IDE3D0021",
+      "ID Cliente": "IDCL3D0023",
+      "Nombre Equipo": "Impresora 3D FDM",
+      "Modelo": "CR-30",
+      "Marca": "Creality",
+      "Serie": "10000475981D123EFDG"
+    },
+    {
+      "ID Equipo": "IDE3D0022",
+      "ID Cliente": "IDCL3D0024",
+      "Nombre Equipo": "Impresora 3D FDM",
+      "Modelo": "Ender 3 V3 Plus",
+      "Marca": "Creality",
+      "Serie": "10000724391s824fisz"
+    },
+    {
+      "ID Equipo": "IDE3D0023",
+      "ID Cliente": "IDCL3D0025",
+      "Nombre Equipo": "Impresora 3D FDM",
+      "Modelo": "Ender 3 v3",
+      "Marca": "Creality"
+    },
+    {
+      "ID Equipo": "IDE3D0024",
+      "ID Cliente": "IDCL3D0026",
+      "Nombre Equipo": "Impresora 3D FDM",
+      "Modelo": "K2 PLUS COMBO",
+      "Marca": "Creality"
+    },
+    {
+      "ID Equipo": "IDE3D0025",
+      "ID Cliente": "IDCL3D0027",
+      "Nombre Equipo": "Impresora 3D SLA",
+      "Modelo": "Photon Mono X2",
+      "Marca": "Anycubic"
+    },
+    {
+      "ID Equipo": "IDE3D0026",
+      "ID Cliente": "IDCL3D0028",
+      "Nombre Equipo": "Impresora 3D FDM",
+      "Modelo": "MK3S",
+      "Marca": "Prusa"
+    },
+    {
+      "ID Equipo": "IDE3D0027",
+      "ID Cliente": "IDCL3D0029",
+      "Nombre Equipo": "Impresora 3D FDM",
+      "Modelo": "Ender 3 max neo",
+      "Marca": "Creality"
+    },
+    {
+      "ID Equipo": "IDE3D0028",
+      "ID Cliente": "IDCL3D0030",
+      "Nombre Equipo": "Impresora 3D",
+      "Modelo": "Genius Pro",
+      "Marca": "Artillery"
+    },
+    {
+      "ID Equipo": "IDE3D0029",
+      "ID Cliente": "IDCL3D0031",
+      "Nombre Equipo": "Impresora 3D",
+      "Modelo": "Ender 3 v 2 neo",
+      "Marca": "Creality"
+    },
+    {
+      "ID Equipo": "IDE3D0030",
+      "ID Cliente": "IDCL3D0032",
+      "Nombre Equipo": "Impresora 3D FDM",
+      "Modelo": "Ender 3 V3 SE",
+      "Marca": "Creality"
+    },
+    {
+      "ID Equipo": "IDE3D0031",
+      "ID Cliente": "IDCL3D0032",
+      "Nombre Equipo": "Impresora 3D",
+      "Modelo": "Ender 3 V2 Neo",
+      "Marca": "Creality"
+    },
+    {
+      "ID Equipo": "IDE3D0032",
+      "ID Cliente": "IDCL3D0033",
+      "Nombre Equipo": "Impresora 3D",
+      "Modelo": "Hellbot Magna Se Pro",
+      "Marca": "Hellbot"
+    },
+    {
+      "ID Equipo": "IDE3D0033",
+      "ID Cliente": "IDCL3D0034",
+      "Nombre Equipo": "Impesora 3D",
+      "Modelo": "Ender 2",
+      "Marca": "Creality"
+    },
+    {
+      "ID Equipo": "IDE3D0034",
+      "ID Cliente": "IDCL3D0034",
+      "Nombre Equipo": "Impresora 3D",
+      "Modelo": "Ender 3",
+      "Marca": "Creality"
+    },
+    {
+      "ID Equipo": "IDE3D0035",
+      "ID Cliente": "IDCL3D0035",
+      "Nombre Equipo": "Impresora 3D",
+      "Modelo": "Ender 3 ve 3 KE",
+      "Marca": "Creality"
+    },
+    {
+      "ID Equipo": "IDE3D0036",
+      "ID Cliente": "IDCL3D0036",
+      "Nombre Equipo": "Impresora 3D Creality K2 Plus Combo",
+      "Modelo": "K2 Plus Combo",
+      "Marca": "Creality"
+    },
+    {
+      "ID Equipo": "IDE3D0037",
+      "ID Cliente": "IDCL3D0037",
+      "Nombre Equipo": "Anycubic S1 Combo",
+      "Modelo": "S1 Combo",
+      "Marca": "Anycubic"
+    },
+    {
+      "ID Equipo": "IDE3D0038",
+      "ID Cliente": "IDCL3D0038",
+      "Nombre Equipo": "Impresora 3D",
+      "Modelo": "K1C",
+      "Marca": "Creality"
+    },
+    {
+      "ID Equipo": "IDE3D0039",
+      "ID Cliente": "IDCL3D0040",
+      "Nombre Equipo": "Impresora de resina",
+      "Modelo": "Halot mage pro",
+      "Marca": "Creality"
+    },
+    {
+      "ID Equipo": "IDE3D0040",
+      "ID Cliente": "IDCL3D0041",
+      "Nombre Equipo": "Impresora 3D FDM Creality Ender 3 Pro",
+      "Modelo": "Ender 3 Pro",
+      "Marca": "Creality"
+    },
+    {
+      "ID Equipo": "IDE3D0041",
+      "ID Cliente": "IDCL3D0042",
+      "Nombre Equipo": "Impresora 3D",
+      "Modelo": "Genius pro",
+      "Marca": "Artilleri"
+    },
+    {
+      "ID Equipo": "IDE3D0042",
+      "ID Cliente": "IDCL3D0043",
+      "Nombre Equipo": "Impresora 3D FDM",
+      "Modelo": "K1 Max",
+      "Marca": "Creality"
+    },
+    {
+      "ID Equipo": "IDE3D0043",
+      "ID Cliente": "IDCL3D0043",
+      "Nombre Equipo": "Impresora 3D FDM",
+      "Modelo": "K2 Plus",
+      "Marca": "Creality"
+    },
+    {
+      "ID Equipo": "IDE3D0044",
+      "ID Cliente": "IDCL3D0003",
+      "Nombre Equipo": "Impresora 3D FDM Bambu Lab X1 Carbón",
+      "Modelo": "X1 Carbón",
+      "Marca": "Bambu Lab"
+    },
+    {
+      "ID Equipo": "IDE3D0045",
+      "ID Cliente": "IDCL3D0044",
+      "Nombre Equipo": "Impresora 3D FDM Creality",
+      "Modelo": "Ender 3S1"
+    },
+    {
+      "ID Equipo": "IDE3D0046",
+      "ID Cliente": "IDCL3D0003",
+      "Nombre Equipo": "Bambu lab P1S",
+      "Modelo": "P1S",
+      "Marca": "Bambu lab"
+    },
+    {
+      "ID Equipo": "IDE3D0047",
+      "ID Cliente": "IDCL3D0003",
+      "Nombre Equipo": "Impresora 3D Bambu Lab A1",
+      "Modelo": "A1",
+      "Marca": "Bambu Lab"
+    },
+    {
+      "ID Equipo": "IDE3D0048",
+      "ID Cliente": "IDCL3D0045",
+      "Nombre Equipo": "Impresora 3D",
+      "Modelo": "Ender 5 plus",
+      "Marca": "Creality"
+    },
+    {
+      "ID Equipo": "IDE3D0049",
+      "ID Cliente": "IDCL3D0046",
+      "Nombre Equipo": "Impresora 3D Fdm",
+      "Modelo": "A1",
+      "Marca": "Bambu lab"
+    },
+    {
+      "ID Equipo": "IDE3D0050",
+      "ID Cliente": "IDCL3D0047",
+      "Nombre Equipo": "Impresora 3d",
+      "Modelo": "Ender 3V 2",
+      "Marca": "Creality"
+    },
+    {
+      "ID Equipo": "IDE3D0051",
+      "ID Cliente": "IDCL3D0048",
+      "Nombre Equipo": "Impresora 3D FDM",
+      "Modelo": "Ender 3 V3",
+      "Marca": "Creality"
+    },
+    {
+      "ID Equipo": "IDE3D0052",
+      "ID Cliente": "IDCL3D0031",
+      "Nombre Equipo": "Impresora 3D Creality Ender 3 V3",
+      "Modelo": "Ender 3 V3",
+      "Marca": "Creality"
+    },
+    {
+      "ID Equipo": "IDE3D0053",
+      "ID Cliente": "IDCL3D0049",
+      "Nombre Equipo": "Impresora 3D",
+      "Modelo": "Ender 3 V2",
+      "Marca": "Creality"
+    },
+    {
+      "ID Equipo": "IDE3D0054",
+      "ID Cliente": "IDCL3D0050",
+      "Nombre Equipo": "Impresora 3D",
+      "Modelo": "Ender 3 V3 SE",
+      "Marca": "Creality"
+    },
+    {
+      "ID Equipo": "IDE3D0055",
+      "ID Cliente": "IDCL3D0051",
+      "Nombre Equipo": "Impresora 3D Bambu lab A1",
+      "Modelo": "A1",
+      "Marca": "Bambu lab"
+    },
+    {
+      "ID Equipo": "IDE3D0056",
+      "ID Cliente": "IDCL3D0052",
+      "Nombre Equipo": "Impresora 3D",
+      "Modelo": "HI COMBO",
+      "Marca": "Creality"
+    },
+    {
+      "ID Equipo": "IDE3D0057",
+      "ID Cliente": "IDCL3D0053",
+      "Nombre Equipo": "Impresora 3D FDM",
+      "Modelo": "Anycubic",
+      "Marca": "Kobra Neo"
+    },
+    {
+      "ID Equipo": "IDE3D0058",
+      "ID Cliente": "IDCL3D0054",
+      "Nombre Equipo": "CNC",
+      "Modelo": "Falcon A1 10W",
+      "Marca": "Creality"
+    },
+    {
+      "ID Equipo": "IDE3D0059",
+      "ID Cliente": "IDCL3D0055",
+      "Nombre Equipo": "Impresora 3D FDM",
+      "Modelo": "SideWinder x2",
+      "Marca": "Artillery"
+    },
+    {
+      "ID Equipo": "IDE3D0060",
+      "ID Cliente": "IDCL3D0039",
+      "Nombre Equipo": "Equipo 2",
+      "Modelo": "modelo 3",
+      "Marca": "marca 3",
+      "Serie": "123123"
+    },
+    {
+      "ID Equipo": "IDE3D0061",
+      "ID Cliente": "IDCL3D0056",
+      "Nombre Equipo": "Impresora 3D",
+      "Modelo": "X1 CARBON COMBO",
+      "Marca": "Bambu Lab"
+    },
+    {
+      "ID Equipo": "IDE3D0062",
+      "ID Cliente": "IDCL3D0057",
+      "Nombre Equipo": "Impresora 3D SLA",
+      "Modelo": "Mars 4 ultra",
+      "Marca": "ELEGOO"
+    },
+    {
+      "ID Equipo": "IDE3D0063",
+      "ID Cliente": "IDCL3D0058",
+      "Nombre Equipo": "Impresora 3D",
+      "Modelo": "A1 Combo",
+      "Marca": "Bambu Lab"
+    },
+    {
+      "ID Equipo": "IDE3D0064",
+      "ID Cliente": "IDCL3D0036",
+      "Nombre Equipo": "Impresora 3D FDM Bambu Lab X1 Carbón",
+      "Modelo": "X1 Carbón",
+      "Marca": "Bambu Lab X1"
+    },
+    {
+      "ID Equipo": "IDE3D0065",
+      "ID Cliente": "IDCL3D0059",
+      "Nombre Equipo": "Impresora 3D Anycubic",
+      "Modelo": "Photon Mono M7 Pro",
+      "Marca": "Anycubic"
+    },
+    {
+      "ID Equipo": "IDE3D0066",
+      "ID Cliente": "IDCL3D0060",
+      "Nombre Equipo": "IMPRESORA 3D",
+      "Modelo": "X1 CARBON",
+      "Marca": "Bambu lab"
+    },
+    {
+      "ID Equipo": "IDE3D0067",
+      "ID Cliente": "IDCL3D0061",
+      "Nombre Equipo": "IMPRESORA 3D",
+      "Modelo": "Kobra 2",
+      "Marca": "Anycubic"
+    },
+    {
+      "ID Equipo": "IDE3D0068",
+      "ID Cliente": "IDCL3D0062",
+      "Nombre Equipo": "Bambu Lab X1E",
+      "Modelo": "X1E",
+      "Marca": "Bambu Lab"
+    },
+    {
+      "ID Equipo": "IDE3D0069",
+      "ID Cliente": "IDCL3D0035",
+      "Nombre Equipo": "Impresora 3D",
+      "Modelo": "Ender 3 v3 SE",
+      "Marca": "Creality"
+    },
+    {
+      "ID Equipo": "IDE3D0070",
+      "Modelo": "Bambu Lab P1S AMS",
+      "Marca": "Bambu Lab"
+    }
+  ]
+};
+    
+    let rootClientes3D = await prisma.parameter.findUnique({ where: { mnemonic: 'CLIENTES_3D' } });
+    if (!rootClientes3D) rootClientes3D = await prisma.parameter.create({ data: { mnemonic: 'CLIENTES_3D', name: 'Clientes 3D SB', value: '3D' }});
+
+    let rootEquipos3D = await prisma.parameter.findUnique({ where: { mnemonic: 'EQUIPOS_3D' } });
+    if (!rootEquipos3D) rootEquipos3D = await prisma.parameter.create({ data: { mnemonic: 'EQUIPOS_3D', name: 'Equipos 3D SB', value: '3D' }});
+
+    let rootServicios3D = await prisma.parameter.findUnique({ where: { mnemonic: 'INCIDENCIAS_3D' } });
+    if (!rootServicios3D) rootServicios3D = await prisma.parameter.create({ data: { mnemonic: 'INCIDENCIAS_3D', name: 'Servicios 3D SB', value: '3D' }});
+
+    let addedClients = 0;
+    for (const c of data.clientes) {
+      const idStr = c['ID Cliente'] || '';
+      if (!idStr) continue;
+      let name = c.Empresa ? c.Empresa : (c.Cedula || '') + ' ' + (c.Nombre || '') + ' ' + (c.Apellidos || '');
+      name = name.trim();
+      if (!name) continue;
+
+      const existing = await prisma.parameter.findFirst({ where: { parentId: rootClientes3D.id, name } });
+      if (!existing) {
+        await prisma.parameter.create({
+          data: {
+            name,
+            parentId: rootClientes3D.id,
+            metadata: {
+              cedula: c.Cedula,
+              empresa: c.Empresa,
+              nombres: c.Nombre,
+              apellidos: c.Apellidos,
+              correo: c.Correo,
+              ciudad: c.Ciudad,
+              telefono: c.Telefono,
+              direccion: c.Direccion,
+              idCliente: idStr
+            }
+          }
+        });
+        addedClients++;
+      }
+    }
+
+    let addedEquipments = 0;
+    for (const e of data.equipos) {
+      const idEquipo = e['ID Equipo'];
+      const idClienteExcel = e['ID Cliente'];
+      if (!idEquipo) continue;
+      
+      let clientId = null;
+      if (idClienteExcel) {
+        const clients = await prisma.parameter.findMany({ where: { parentId: rootClientes3D.id } });
+        const client = clients.find((cl: any) => cl.metadata && cl.metadata.idCliente === idClienteExcel);
+        if (client) clientId = client.id;
+      }
+
+      const name = e.Modelo || e['Nombre Equipo'] || 'Equipo';
+      const existing = await prisma.parameter.findFirst({ where: { parentId: rootEquipos3D.id, name } });
+      if (!existing) {
+        await prisma.parameter.create({
+          data: {
+            name,
+            parentId: rootEquipos3D.id,
+            metadata: {
+              clientId: clientId,
+              nombreEquipo: e['Nombre Equipo'],
+              marca: e.Marca,
+              modelo: e.Modelo,
+              serie: e.Serie,
+              idEquipo: idEquipo
+            }
+          }
+        });
+        addedEquipments++;
+      }
+    }
+
+    const hardcodedServicios = [
+      "VISITA TÉCNICA EN SITIO",
+      "VISITA TÉCNICA EN LOCAL",
+      "MANTENIMIENTO PREVENTIVO FDM",
+      "MANTENIMIENTO PREVENTIVO SLA",
+      "ENSAMBLADO",
+      "DIAGNOSTICO",
+      "IMPRESIÓN 3D",
+      "ESCANEO 3D"
+    ];
+    let addedServicios = 0;
+    for (const s of hardcodedServicios) {
+      const existing = await prisma.parameter.findFirst({ where: { parentId: rootServicios3D.id, name: s } });
+      if (!existing) {
+        await prisma.parameter.create({ data: { name: s, parentId: rootServicios3D.id }});
+        addedServicios++;
+      }
+    }
+
+    
+    let rootRepuestos3D = await prisma.parameter.findUnique({ where: { mnemonic: 'REPUESTOS_3D' } });
+    if (!rootRepuestos3D) rootRepuestos3D = await prisma.parameter.create({ data: { mnemonic: 'REPUESTOS_3D', name: 'Repuestos 3D SB', value: '3D' }});
+
+    let rootProveedores3D = await prisma.parameter.findUnique({ where: { mnemonic: 'PROVEEDORES_3D' } });
+    if (!rootProveedores3D) rootProveedores3D = await prisma.parameter.create({ data: { mnemonic: 'PROVEEDORES_3D', name: 'Proveedores 3D SB', value: '3D' }});
+
+    const repuestos = [
+      "Boquilla 0.4mm Latón MK8",
+      "Tubo PTFE Bowden 1m",
+      "Correa GT2 6mm",
+      "Polea GT2 20 dientes",
+      "Rodamiento LM8UU",
+      "Hotend Completo V6 24V",
+      "Cartucho Calefactor 24V 40W",
+      "Termistor NTC 100K",
+      "Motor NEMA 17"
+    ];
+    for (const r of repuestos) {
+      const existing = await prisma.parameter.findFirst({ where: { parentId: rootRepuestos3D.id, name: r } });
+      if (!existing) await prisma.parameter.create({ data: { name: r, parentId: rootRepuestos3D.id }});
+    }
+
+    const proveedores = [
+      "Empresa 1",
+      "AMAZON",
+      "Aliexpress",
+      "COMPRA LOCAL",
+      "HORUSTECH"
+    ];
+    for (const p of proveedores) {
+      const existing = await prisma.parameter.findFirst({ where: { parentId: rootProveedores3D.id, name: p } });
+      if (!existing) await prisma.parameter.create({ data: { name: p, parentId: rootProveedores3D.id }});
+    }
+
+    res.json({ success: true, message: `Added ${addedClients} clients, ${addedEquipments} equipments, ${addedServicios} services, repuestos and proveedores for 3D` });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: (error as any).message, stack: (error as any).stack });
+  }
+});
+
+
 httpServer.listen(PORT, () => {
   console.log(`\u2705 Backend Server running on port ${PORT} with WebSockets (Multi-Number Enabled)`);
 });

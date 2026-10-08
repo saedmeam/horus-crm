@@ -6,40 +6,65 @@ import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-const STAGE_ORDER = ['NUEVO_LEAD', 'EN_NEGOCIACION', 'VENTA_GANADA', 'VENTA_PERDIDA'];
-const STAGE_LABELS: Record<string, string> = { 'NUEVO_LEAD': 'Nuevo Lead', 'EN_NEGOCIACION': 'En Negociación', 'VENTA_GANADA': 'Venta Ganada', 'VENTA_PERDIDA': 'Venta Perdida' };
-const STAGE_COLORS: Record<string, string> = { 'NUEVO_LEAD': 'bg-blue-100 text-blue-800', 'EN_NEGOCIACION': 'bg-yellow-100 text-yellow-800', 'VENTA_GANADA': 'bg-green-100 text-green-800', 'VENTA_PERDIDA': 'bg-red-100 text-red-800' };
-
 export default function VentasAdminPage() {
   const [conversations, setConversations] = useState<any[]>([]);
+  const [stages, setStages] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => { fetchConversations(); }, []);
+  useEffect(() => { fetchData(); }, []);
 
-  const fetchConversations = async () => {
+  const fetchData = async () => {
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}/api/conversations`, { headers: { 'Authorization': 'Bearer ' + token } });
-      if (res.ok) { const data = await res.json(); setConversations(Array.isArray(data) ? data : []); }
+      const api = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001';
+      const [cRes, sRes] = await Promise.all([
+        fetch(`${api}/api/conversations`, { headers: { 'Authorization': 'Bearer ' + token } }),
+        fetch(`${api}/api/settings`, { headers: { 'Authorization': 'Bearer ' + token } })
+      ]);
+      
+      if (cRes.ok) { const data = await cRes.json(); setConversations(Array.isArray(data) ? data : []); }
+      if (sRes.ok) {
+        const d = await sRes.json();
+        setStages(d.pipelineStages || [
+            { id: 'NUEVO_LEAD', name: 'Nuevo Lead', color: '#3b82f6' },
+            { id: 'EN_NEGOCIACION', name: 'En Negociación', color: '#eab308' },
+            { id: 'VENTA_GANADA', name: 'Venta Ganada', color: '#22c55e' },
+            { id: 'VENTA_PERDIDA', name: 'Venta Perdida', color: '#ef4444' }
+        ]);
+      }
     } catch (e) { console.error(e); } finally { setLoading(false); }
+  };
+
+  const getStageName = (id: string) => {
+    const s = stages.find(st => st.id === id);
+    return s ? s.name : id;
+  };
+
+  const getStageColor = (id: string) => {
+    const s = stages.find(st => st.id === id);
+    return s?.color || '#9ca3af';
   };
 
   const stageGroups = useMemo(() => {
     const map: Record<string, any[]> = {};
-    for (const c of conversations) { const s = c.stage || 'NUEVO_LEAD'; if (!map[s]) map[s] = []; map[s].push(c); }
+    for (const c of conversations) { 
+        const s = c.stage || (stages.length > 0 ? stages[0].id : 'NUEVO_LEAD'); 
+        if (!map[s]) map[s] = []; 
+        map[s].push(c); 
+    }
     return map;
-  }, [conversations]);
+  }, [conversations, stages]);
 
-  const sortedStages = useMemo(() => {
-    const known = STAGE_ORDER.filter(s => stageGroups[s]);
-    const others = Object.keys(stageGroups).filter(s => !STAGE_ORDER.includes(s));
+  const sortedStageIds = useMemo(() => {
+    const known = stages.map(s => s.id).filter(id => stageGroups[id]);
+    const others = Object.keys(stageGroups).filter(id => !stages.find(s => s.id === id));
     return [...known, ...others];
-  }, [stageGroups]);
+  }, [stageGroups, stages]);
 
   const total = conversations.length;
 
   const exportExcel = () => {
-    const data = conversations.map(c => ({ 'Cliente': c.contact?.name || 'Sin nombre', 'Teléfono': c.contact?.phone || '', 'Etapa': STAGE_LABELS[c.stage] || c.stage, 'Estado': c.status || '', 'Última actividad': new Date(c.updatedAt).toLocaleDateString() }));
+    const data = conversations.map(c => ({ 'Cliente': c.contact?.name || 'Sin nombre', 'Teléfono': c.contact?.phone || '', 'Etapa': getStageName(c.stage), 'Estado': c.status || '', 'Última actividad': new Date(c.updatedAt).toLocaleDateString() }));
     const ws = XLSX.utils.json_to_sheet(data); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Ventas');
     XLSX.writeFile(wb, `Ventas_Horustech_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
@@ -47,7 +72,7 @@ export default function VentasAdminPage() {
   const exportPDF = () => {
     const doc = new jsPDF(); doc.text('Reporte de Ventas (Embudo) - Horustech', 14, 15);
     const tableColumn = ['Cliente', 'Teléfono', 'Etapa', 'Estado', 'Última actividad'];
-    const tableRows = conversations.map(c => [ c.contact?.name || 'Sin nombre', c.contact?.phone || '-', STAGE_LABELS[c.stage] || c.stage, c.status || '-', new Date(c.updatedAt).toLocaleDateString() ]);
+    const tableRows = conversations.map(c => [ c.contact?.name || 'Sin nombre', c.contact?.phone || '-', getStageName(c.stage), c.status || '-', new Date(c.updatedAt).toLocaleDateString() ]);
     autoTable(doc, { head: [tableColumn], body: tableRows, startY: 25, styles: { fontSize: 8 } });
     doc.save(`Ventas_Horustech_${new Date().toISOString().split('T')[0]}.pdf`);
   };
@@ -66,13 +91,13 @@ export default function VentasAdminPage() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {sortedStages.map(stage => (
-          <div key={stage} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-            <div className="text-sm font-semibold text-gray-500">{STAGE_LABELS[stage] || stage}</div>
-            <div className="text-3xl font-bold text-gray-800 mt-1">{stageGroups[stage]?.length || 0}</div>
+        {sortedStageIds.map(stageId => (
+          <div key={stageId} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+            <div className="text-sm font-semibold text-gray-500" style={{ color: getStageColor(stageId) }}>{getStageName(stageId)}</div>
+            <div className="text-3xl font-bold text-gray-800 mt-1">{stageGroups[stageId]?.length || 0}</div>
           </div>
         ))}
-        {sortedStages.length === 0 && !loading && (
+        {sortedStageIds.length === 0 && !loading && (
           <div className="col-span-4 bg-white p-6 rounded-2xl text-center text-gray-400">No hay conversaciones todavía.</div>
         )}
       </div>
@@ -94,7 +119,13 @@ export default function VentasAdminPage() {
                   <tr key={c.id} className="hover:bg-gray-50/50 transition-colors">
                     <td className="px-6 py-4 font-medium text-gray-900">{c.contact?.name || 'Sin nombre'}</td>
                     <td className="px-6 py-4">{c.contact?.phone || '-'}</td>
-                    <td className="px-6 py-4"><span className={`px-2 py-1 rounded-md text-xs font-bold ${STAGE_COLORS[c.stage] || 'bg-gray-100 text-gray-800'}`}>{STAGE_LABELS[c.stage] || c.stage}</span></td>
+                    <td className="px-6 py-4">
+                        <span 
+                            className="px-2 py-1 rounded-md text-xs font-bold text-white" 
+                            style={{ backgroundColor: getStageColor(c.stage) }}>
+                            {getStageName(c.stage)}
+                        </span>
+                    </td>
                     <td className="px-6 py-4">{c.status || '-'}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-gray-500">{new Date(c.updatedAt).toLocaleDateString()}</td>
                   </tr>

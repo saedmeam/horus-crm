@@ -87,11 +87,43 @@ export default function KanbanSettingsPage() {
 
       <div className="p-6">
         <div className="space-y-3 mb-6">
-          {stages.map((stage) => (
+          {stages.map((stage, index) => (
             <div key={stage.id} className="flex gap-4 items-center bg-gray-50 p-3 rounded-xl border border-gray-100">
               <div className="w-4 h-4 rounded-full" style={{ backgroundColor: stage.color }}></div>
               <span className="flex-1 font-semibold text-gray-700">{stage.name}</span>
               <span className="text-xs text-gray-400 font-mono">ID: {stage.id}</span>
+              <div className="flex gap-1 border-r border-gray-200 pr-3 mr-1">
+                <button 
+                  onClick={() => {
+                    if (index === 0) return;
+                    const updated = [...stages];
+                    const temp = updated[index - 1];
+                    updated[index - 1] = updated[index];
+                    updated[index] = temp;
+                    setStages(updated);
+                    saveSettings(updated);
+                  }}
+                  disabled={index === 0}
+                  className="px-2 py-1 bg-gray-200 hover:bg-gray-300 disabled:opacity-30 rounded transition-colors"
+                >
+                  ↑
+                </button>
+                <button 
+                  onClick={() => {
+                    if (index === stages.length - 1) return;
+                    const updated = [...stages];
+                    const temp = updated[index + 1];
+                    updated[index + 1] = updated[index];
+                    updated[index] = temp;
+                    setStages(updated);
+                    saveSettings(updated);
+                  }}
+                  disabled={index === stages.length - 1}
+                  className="px-2 py-1 bg-gray-200 hover:bg-gray-300 disabled:opacity-30 rounded transition-colors"
+                >
+                  ↓
+                </button>
+              </div>
               <button 
                 onClick={() => handleRemoveStage(stage.id)}
                 className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"

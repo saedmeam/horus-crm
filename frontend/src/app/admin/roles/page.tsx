@@ -2,18 +2,38 @@
 import { useEffect, useState } from 'react';
 import { Shield, Plus, Edit, Trash2 } from 'lucide-react';
 
-const AVAILABLE_SCREENS = [
+const DEFAULT_SCREENS = [
   { id: '/', name: 'Chats' },
   { id: '/recordatorios', name: 'Recordatorios' },
   { id: '/kanban', name: 'Embudo (Kanban)' },
   { id: '/contacts', name: 'Contactos' },
-  { id: '/admin/configuracion', name: 'Configuración General' },
-  { id: '/admin/usuarios', name: 'Usuarios' },
-  { id: '/admin/roles', name: 'Roles y Permisos' }
+  { id: '/tickets-sm', name: 'Mesa de Ayuda (SM)' },
+  { id: '/tickets-3d', name: 'Soporte 3D' },
+  { id: '/backorders', name: 'Órdenes de Compra' },
+  { id: '/admin/dashboard', name: 'Dashboard' },
+  { id: '/admin/notificaciones', name: 'Notificaciones' },
+  { id: '/admin/roles', name: 'Roles y Permisos' },
+  { id: '/admin/users', name: 'Usuarios' },
+  { id: '/admin/clientes', name: 'Catálogo: Clientes' },
+  { id: '/admin/equipos', name: 'Catálogo: Equipos' },
+  { id: '/admin/incidencias', name: 'Catálogo: Incidencias' },
+  { id: '/admin/tareas', name: 'Catálogo: Tareas' },
+  { id: '/admin/proveedores', name: 'Catálogo: Proveedores' },
+  { id: '/admin/lines', name: 'Líneas WhatsApp' },
+  { id: '/admin/snippets', name: 'Respuestas Rápidas' },
+  { id: '/admin/kanban-settings', name: 'Etapas Kanban' },
+  { id: '/admin/contact-fields', name: 'Campos Contactos' },
+  { id: '/admin/pedidos', name: 'Reporte Pedidos' },
+  { id: '/admin/ventas', name: 'Reporte Ventas' },
+  { id: '/admin/reporte-vendedor', name: 'Reporte Vendedor' },
+  { id: '/admin/recordatorios', name: 'Reporte Recordatorios' },
+  { id: '/admin/plantillas', name: 'Plantillas Meta' },
+  { id: '/admin/configuracion', name: 'Configuración API' }
 ];
 
 export default function RolesPage() {
   const [roles, setRoles] = useState([]);
+  const [availableScreens, setAvailableScreens] = useState<any[]>(DEFAULT_SCREENS);
   const [loading, setLoading] = useState(true);
   
   const [editingRole, setEditingRole] = useState<any>(null);
@@ -30,10 +50,31 @@ export default function RolesPage() {
 
   const fetchRoles = async () => {
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001'}/api/roles`, {
-        headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
-      });
-      if (res.ok) setRoles(await res.json());
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001';
+      const token = localStorage.getItem('token');
+      const [resRoles, resParams] = await Promise.all([
+        fetch(`${apiUrl}/api/roles`, { headers: { 'Authorization': 'Bearer ' + token } }),
+        fetch(`${apiUrl}/api/parameters?mnemonic=SISTEMA_PANTALLAS`, { headers: { 'Authorization': 'Bearer ' + token } })
+      ]);
+      
+      if (resRoles.ok) setRoles(await resRoles.json());
+      
+      if (resParams.ok) {
+        const paramsData = await resParams.json();
+        let dynamicScreens: any[] = [];
+        if (paramsData.length > 0 && paramsData[0].children) {
+          dynamicScreens = paramsData[0].children.map((c: any) => ({ id: c.value, name: c.name }));
+        }
+        
+        // Merge without duplicates (dynamic overrides default if same ID)
+        const combined = [...DEFAULT_SCREENS];
+        for (const ds of dynamicScreens) {
+          if (ds.id && !combined.find(s => s.id === ds.id)) {
+            combined.push(ds);
+          }
+        }
+        setAvailableScreens(combined);
+      }
     } catch(e) {
       console.error(e);
     } finally {
@@ -137,7 +178,7 @@ export default function RolesPage() {
           <div className="mt-4">
             <label className="block text-sm font-medium mb-2">Accesos a Pantallas</label>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {AVAILABLE_SCREENS.map(screen => (
+              {availableScreens.map(screen => (
                 <div key={screen.id} className="flex items-center gap-2 p-2 border rounded dark:border-gray-700">
                   <input 
                     type="checkbox" 

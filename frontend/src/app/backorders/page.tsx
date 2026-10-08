@@ -7,18 +7,20 @@ import MainSidebar from '@/components/MainSidebar';
 export default function BackordersPage() {
   const [orders, setOrders] = useState<any[]>([]);
   const [contacts, setContacts] = useState<any[]>([]);
+  const [repuestos, setRepuestos] = useState<any[]>([]);
+  const [tickets, setTickets] = useState<any[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [user, setUser] = useState<any>(null);
 
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<any>({
     contactId: '',
+    providerId: '',
     orderNumber: '',
     productName: '',
-    quantity: 1,
     notes: '',
-    photoUrl: ''
+    metadata: {}
   });
 
   useEffect(() => {
@@ -34,13 +36,25 @@ export default function BackordersPage() {
       const headers = { 'Authorization': `Bearer ${token}` };
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001';
       
-      const [ordersRes, contactsRes] = await Promise.all([
+      const [ordersRes, provRes, repRes, tickRes] = await Promise.all([
         fetch(`${apiUrl}/api/backorders`, { headers }),
-        fetch(`${apiUrl}/api/contacts`, { headers })
+        fetch(`${apiUrl}/api/helpdesk/providers?line=3D`, { headers }),
+        fetch(`${apiUrl}/api/helpdesk/spare-parts?line=3D`, { headers }),
+        fetch(`${apiUrl}/api/tickets?line=3D`, { headers })
       ]);
 
       if (ordersRes.ok) setOrders(await ordersRes.json());
-      if (contactsRes.ok) setContacts(await contactsRes.json());
+      if (provRes.ok) {
+        const provs = await provRes.json();
+        setContacts(provs.filter((p: any) => p.mnemonic === 'PROVEEDORES_3D' || (p.parent && p.parent.mnemonic === 'PROVEEDORES_3D') || p.parentId)); // Simplify by storing all providers in contacts
+      }
+      if (repRes.ok) {
+        // Will store repuestos in a new state
+        setRepuestos(await repRes.json());
+      }
+      if (tickRes.ok) {
+        setTickets(await tickRes.json());
+      }
     } catch (e) {
       console.error(e);
     }
@@ -49,13 +63,13 @@ export default function BackordersPage() {
 
   const handleOpenNew = () => {
     setForm({
-      contactId: '',
-      orderNumber: `OC${String(orders.length + 1).padStart(4, '0')}`,
-      productName: '',
-      quantity: 1,
-      notes: '',
-      photoUrl: ''
-    });
+    contactId: '',
+    providerId: '',
+    orderNumber: `OC${String(orders.length + 1).padStart(4, '0')}`,
+    productName: '',
+    notes: '',
+    metadata: {}
+  });
     setShowModal(true);
   };
 
@@ -180,53 +194,100 @@ export default function BackordersPage() {
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
             <h3 className="text-xl font-bold text-gray-800 mb-4">Orden de Compra Form</h3>
             
+            
             <form onSubmit={handleSave} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">OrdenCompraID *</label>
                 <input type="text" disabled className="w-full px-3 py-2 border rounded-lg bg-gray-100 text-gray-600 outline-none" value={form.orderNumber} />
               </div>
-
+              
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Nombre Repuesto *</label>
-                <input required type="text" placeholder="Ej. Hotend Completo V6 24V" className="w-full px-3 py-2 border rounded-lg text-black focus:ring-2 focus:ring-blue-500 outline-none" 
-                  value={form.productName} onChange={e => setForm({...form, productName: e.target.value})} />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Cantidad *</label>
-                  <input required type="number" min="1" className="w-full px-3 py-2 border rounded-lg text-black focus:ring-2 focus:ring-blue-500 outline-none" 
-                    value={form.quantity} onChange={e => setForm({...form, quantity: parseInt(e.target.value)})} />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">IdProveedor</label>
-                  <select className="w-full px-3 py-2 border rounded-lg text-black focus:ring-2 focus:ring-blue-500 outline-none bg-white" 
-                    value={form.contactId} onChange={e => setForm({...form, contactId: e.target.value})}>
-                    <option value="">-- Seleccionar --</option>
-                    {contacts.map((c: any) => (
-                      <option key={c.id} value={c.id}>{c.name || c.phone}</option>
-                    ))}
-                  </select>
-                </div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">IdProveedor</label>
+                <select className="w-full px-3 py-2 border rounded-lg text-black focus:ring-2 focus:ring-blue-500 outline-none bg-white" 
+                  value={form.providerId || ''} onChange={e => setForm({...form, providerId: e.target.value})}>
+                  <option value="">-- Seleccionar --</option>
+                  {contacts.map((c: any) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">URL Evidencia / Compromiso</label>
-                <input type="url" placeholder="https://..." className="w-full px-3 py-2 border rounded-lg text-black focus:ring-2 focus:ring-blue-500 outline-none" 
-                  value={form.photoUrl} onChange={e => setForm({...form, photoUrl: e.target.value})} />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Fecha de Ingreso</label>
+                <input type="datetime-local" className="w-full px-3 py-2 border rounded-lg text-black focus:ring-2 focus:ring-blue-500 outline-none" 
+                  value={form.metadata?.fechaIngreso || ''} onChange={e => setForm({...form, metadata: {...(form.metadata || {}), fechaIngreso: e.target.value}})} />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Notas adicionales</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nombre Repuesto</label>
+                <select className="w-full px-3 py-2 border rounded-lg text-black focus:ring-2 focus:ring-blue-500 outline-none bg-white" 
+                  value={form.productName} onChange={e => setForm({...form, productName: e.target.value})}>
+                  <option value="">-- Seleccionar Repuesto --</option>
+                  {repuestos.map((r: any) => (
+                    <option key={r.id} value={r.name}>{r.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Orden3D Relacionada</label>
+                <select className="w-full px-3 py-2 border rounded-lg text-black focus:ring-2 focus:ring-blue-500 outline-none bg-white" 
+                  value={form.metadata?.orden3d || ''} onChange={e => setForm({...form, metadata: {...(form.metadata || {}), orden3d: e.target.value}})}>
+                  <option value="">-- Seleccionar Ticket 3D --</option>
+                  {tickets.map((t: any) => (
+                    <option key={t.id} value={t.ticketNumber}>{t.ticketNumber} - {t.client?.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Fecha de respuesta disponibilidad</label>
+                <input type="datetime-local" className="w-full px-3 py-2 border rounded-lg text-black focus:ring-2 focus:ring-blue-500 outline-none" 
+                  value={form.metadata?.fechaRespuesta || ''} onChange={e => setForm({...form, metadata: {...(form.metadata || {}), fechaRespuesta: e.target.value}})} />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Fecha Estimada</label>
+                <input type="datetime-local" className="w-full px-3 py-2 border rounded-lg text-black focus:ring-2 focus:ring-blue-500 outline-none" 
+                  value={form.metadata?.fechaEstimada || ''} onChange={e => setForm({...form, metadata: {...(form.metadata || {}), fechaEstimada: e.target.value}})} />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Numero de Tracking</label>
+                <input type="text" className="w-full px-3 py-2 border rounded-lg text-black focus:ring-2 focus:ring-blue-500 outline-none" 
+                  value={form.metadata?.tracking || ''} onChange={e => setForm({...form, metadata: {...(form.metadata || {}), tracking: e.target.value}})} />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Fecha de salida</label>
+                <input type="datetime-local" className="w-full px-3 py-2 border rounded-lg text-black focus:ring-2 focus:ring-blue-500 outline-none" 
+                  value={form.metadata?.fechaSalida || ''} onChange={e => setForm({...form, metadata: {...(form.metadata || {}), fechaSalida: e.target.value}})} />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Fecha Real de Entrega</label>
+                <input type="datetime-local" className="w-full px-3 py-2 border rounded-lg text-black focus:ring-2 focus:ring-blue-500 outline-none" 
+                  value={form.metadata?.fechaEntrega || ''} onChange={e => setForm({...form, metadata: {...(form.metadata || {}), fechaEntrega: e.target.value}})} />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Fecha de Cambio</label>
+                <input type="datetime-local" className="w-full px-3 py-2 border rounded-lg text-black focus:ring-2 focus:ring-blue-500 outline-none" 
+                  value={form.metadata?.fechaCambio || ''} onChange={e => setForm({...form, metadata: {...(form.metadata || {}), fechaCambio: e.target.value}})} />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Observación Ej:Número de Caso</label>
                 <textarea rows={3} className="w-full px-3 py-2 border rounded-lg text-black focus:ring-2 focus:ring-blue-500 outline-none" 
                   value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} />
               </div>
 
               <div className="flex justify-end gap-3 pt-4">
                 <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancelar</button>
-                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Guardar Orden</button>
+                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save</button>
               </div>
             </form>
+
           </div>
         </div>
       )}

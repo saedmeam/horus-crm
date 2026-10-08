@@ -33,6 +33,9 @@ export default function ConfiguracionAdminPage() {
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
+  
+  
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -106,6 +109,7 @@ export default function ConfiguracionAdminPage() {
           </button>
         </div>
       </form>
-    </div>
+
+      </div>
   );
 }

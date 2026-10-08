@@ -167,16 +167,20 @@ model Reminder {
 
 model Backorder {
   id               String       @id @default(uuid())
-  contactId        String
-  contact          Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  contactId        String?
+  contact          Contact?     @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  providerId       String?
+  provider         HelpdeskProvider? @relation(fields: [providerId], references: [id])
   orderNumber      String?
   productName      String
   category         String?      
   quantity         Int          @default(1)
   specification    String?      
   notes            String?      @db.Text
-  photoUrl         String?      // Para "Compromiso" photo upload
+  photoUrl         String?      
   createdAt        DateTime     @default(now())
+  businessLine     String       @default("3D")
+  metadata         Json? // for dynamic backorder fields 
 }
 
 model ContactTag {
@@ -233,6 +237,7 @@ model Ticket {
   assignedUserId   String?
   assignedUser     User?     @relation(fields: [assignedUserId], references: [id])
   status           String    @default("ABIERTO") // Abierto, Seguimiento, Cerrado, etc.
+  metadata         Json?
   createdAt        DateTime  @default(now())
   closedAt         DateTime?
   updatedAt        DateTime  @updatedAt
@@ -269,14 +274,22 @@ model TicketReport {
 
 
 model HelpdeskClient {
-  id           String   @id @default(uuid())
-  name         String
-  email        String?
-  phone        String?
-  city         String?
-  address      String?
-  businessLine String   @default("SM") // "SM" o "3D"
-  createdAt    DateTime @default(now())
+  id                    String    @id @default(uuid())
+  code                  String?   // ID Cliente (ej: IDCL3D0001, IDCLSM0001)
+  cedula                String?
+  company               String?   // Empresa / Institucion
+  name                  String
+  lastNames             String?
+  email                 String?
+  phone                 String?
+  city                  String?
+  address               String?
+  businessLine          String    @default("SM") // "SM" o "3D"
+  lastServiceOrderDate  DateTime? // Fecha de ultima OS (SM)
+  firstServiceOrderDate DateTime? // Fecha de primera OS (SM)
+  clientStatus          String?   // Estado de Cliente (SM)
+  incidentCount         Int?      // Incidencias creadas (SM)
+  createdAt             DateTime  @default(now())
 
   tickets      Ticket[]
   reports      TicketReport[]
@@ -284,15 +297,22 @@ model HelpdeskClient {
 }
 
 model HelpdeskEquipment {
-  id           String   @id @default(uuid())
-  name         String
-  brand        String?
-  model        String?
-  serial       String?
-  clientId     String?
-  businessLine String   @default("SM")
-  client       HelpdeskClient? @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  createdAt    DateTime @default(now())
+  id                 String    @id @default(uuid())
+  code               String?   // ID Equipo (ej: IDE3D0001)
+  name               String
+  brand              String?
+  model              String?
+  serial             String?
+  modality           String?   // Modalidad (SM)
+  date               DateTime? // Fecha (SM)
+  installDate        DateTime? // Fecha de instalacion
+  warrantyEndDate    DateTime? // Fecha fin garantia
+  contractStartDate  DateTime? // Fecha inicio contrato
+  contractEndDate    DateTime? // Fecha fin contrato
+  clientId           String?
+  businessLine       String    @default("SM")
+  client             HelpdeskClient? @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  createdAt          DateTime  @default(now())
 }
 
 model HelpdeskIncidentType {
@@ -304,7 +324,77 @@ model HelpdeskIncidentType {
 
 model HelpdeskTaskType {
   id           String   @id @default(uuid())
+  code         String?  // Id Tarea
   name         String
+  type         String?  // Tipo
+  description  String?  // Descripcion
+  flow         String?  // Flujo asignado
   businessLine String   @default("SM")
+  createdAt    DateTime @default(now())
+}
+
+model HelpdeskReception {
+  id        String   @id @default(uuid())
+  code      String?  // Id Recepcion
+  name      String
+  createdAt DateTime @default(now())
+}
+
+model HelpdeskService {
+  id             String   @id @default(uuid())
+  code           String?  // Id Servicio
+  type           String?  // Tipo
+  description    String?  // Descripcion
+  flow           String?  // Flujo asignado
+  estimatedPrice String?  // Precio Estimado (3D)
+  businessLine   String   @default("3D")
+  createdAt      DateTime @default(now())
+}
+
+model HelpdeskEtaType {
+  id           String   @id @default(uuid())
+  code         String?  // Id Tipo ETA
+  type         String?  // Tipo
+  description  String?  // Descripcion
+  service      String?  // Servicio
+  businessLine String   @default("3D")
+  createdAt    DateTime @default(now())
+}
+
+
+
+
+model Parameter {
+  id          String      @id @default(uuid())
+  parentId    String?
+  parent      Parameter?  @relation("ParameterTree", fields: [parentId], references: [id])
+  children    Parameter[] @relation("ParameterTree")
+  mnemonic    String?     // Removed unique because many items might share mnemonic? No, mnemonics are usually unique for roots. Let's make it unique but optional.
+  name        String
+  value       String?
+  description String?
+  active      Boolean     @default(true)
+  metadata    Json?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  
+
+  @@unique([mnemonic])
+}
+
+
+model HelpdeskProvider {
+  id           String   @id @default(uuid())
+  name         String
+  businessLine String   @default("3D")
+  createdAt    DateTime @default(now())
+
+  backorders   Backorder[]
+}
+
+model HelpdeskSparePart {
+  id           String   @id @default(uuid())
+  name         String
+  businessLine String   @default("3D")
   createdAt    DateTime @default(now())
 }

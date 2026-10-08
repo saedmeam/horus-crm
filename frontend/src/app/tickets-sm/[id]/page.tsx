@@ -32,8 +32,9 @@ export default function TicketDetailsPage() {
     status: 'Iniciado',
     clientName: '',
     clientEmail: '',
-    ccEmail: ''
-  });
+      ccEmail: '',
+      techEmail: '',
+    });
 
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
@@ -333,10 +334,39 @@ export default function TicketDetailsPage() {
                     <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wider">Correo de notificación</label>
                     <input type="email" placeholder="correo@hospital.com" value={form.clientEmail} onChange={e => setForm({...form, clientEmail: e.target.value})} className="w-full border rounded-xl px-4 py-2.5 text-sm dark:bg-[#202c33] dark:border-[#374248] focus:border-blue-500 focus:ring-1 outline-none transition-shadow" />
                   </div>
+                  </div>
                 </div>
-              </div>
 
-              <div className="flex justify-end gap-3 pt-6 mt-6 border-t border-gray-200 dark:border-gray-700">
+                  <div className="border-t border-gray-200 dark:border-gray-700 pt-5 mt-6">
+                    <h3 className="font-bold text-sm text-gray-800 dark:text-gray-200 mb-4 flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-blue-600 dark:text-[#00a884]"/> Envio de Correos y Adjuntos
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="col-span-2 md:col-span-1">
+                        <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wider">Estado Correo</label>
+                        <select value={form.status} onChange={e => setForm({...form, status: e.target.value})} className="w-full border rounded-xl px-4 py-2.5 text-sm dark:bg-[#202c33] dark:border-[#374248] focus:border-blue-500 focus:ring-1 outline-none transition-shadow">
+                          <option value="Iniciado">Iniciado</option>
+                          <option value="Completado">Completado</option>
+                        </select>
+                      </div>
+                      <div className="col-span-2 md:col-span-1">
+                        <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wider">PDF Generado</label>
+                        <div className="w-full border border-dashed rounded-xl px-4 py-2 text-sm text-center text-gray-500 flex items-center justify-center cursor-not-allowed">
+                          No hay PDF adjunto
+                        </div>
+                      </div>
+                      <div className="col-span-2 md:col-span-1">
+                        <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wider">Correo CC</label>
+                        <input type="email" placeholder="cc@empresa.com" value={form.ccEmail || ''} onChange={e => setForm({...form, ccEmail: e.target.value})} className="w-full border rounded-xl px-4 py-2.5 text-sm dark:bg-[#202c33] dark:border-[#374248] focus:border-blue-500 focus:ring-1 outline-none transition-shadow" />
+                      </div>
+                      <div className="col-span-2 md:col-span-1">
+                        <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wider">Correo Técnico</label>
+                        <input type="email" placeholder="tecnico@horustech.com" value={form.techEmail || ''} onChange={e => setForm({...form, techEmail: e.target.value})} className="w-full border rounded-xl px-4 py-2.5 text-sm dark:bg-[#202c33] dark:border-[#374248] focus:border-blue-500 focus:ring-1 outline-none transition-shadow" />
+                      </div>
+                    </div>
+                  </div>
+
+                <div className="flex justify-end gap-3 pt-6 mt-6 border-t border-gray-200 dark:border-gray-700">
                 <button type="button" onClick={() => setShowReportModal(false)} className="px-5 py-2.5 border border-gray-300 dark:border-gray-600 rounded-xl font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#202c33] transition-colors">Cancelar</button>
                 <button type="submit" className="px-6 py-2.5 bg-blue-600 text-white rounded-xl font-semibold shadow-md shadow-blue-500/20 hover:bg-blue-700 transition-colors">Guardar Reporte</button>
               </div>

@@ -28,7 +28,18 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const allNavItems = [
     { name: 'Dashboard', icon: require('lucide-react').BarChart3, href: '/admin/dashboard', requiresAdmin: true },
     { name: 'Notificaciones', icon: BellRing, href: '/admin/notificaciones', requiresAdmin: false },
+    { name: 'Roles', icon: require('lucide-react').Shield, href: '/admin/roles', requiresAdmin: true },
     { name: 'Usuarios', icon: Users, href: '/admin/users', requiresAdmin: true },
+    
+      { name: 'Catálogo: Clientes', icon: require('lucide-react').Users, href: '/admin/clientes', requiresAdmin: true },
+    { name: 'Catálogo: Equipos', icon: require('lucide-react').Server, href: '/admin/equipos', requiresAdmin: true },
+    { name: 'Catálogo: Incidencias', icon: require('lucide-react').AlertTriangle, href: '/admin/incidencias', requiresAdmin: true },
+    { name: 'Catálogo: Tareas', icon: require('lucide-react').CheckSquare, href: '/admin/tareas', requiresAdmin: true },
+    { name: 'Catálogo: Proveedores', icon: require('lucide-react').Truck, href: '/admin/proveedores', requiresAdmin: true },
+    { name: 'Catálogo: Repuestos', icon: require('lucide-react').Wrench, href: '/admin/repuestos', requiresAdmin: true },
+    { name: 'Catálogo: Servicios', icon: require('lucide-react').Briefcase, href: '/admin/servicios', requiresAdmin: true },
+    { name: 'Catálogo: Recepción', icon: require('lucide-react').UserCheck, href: '/admin/recepcion', requiresAdmin: true },
+    { name: 'Catálogo: ETA', icon: require('lucide-react').Clock, href: '/admin/eta', requiresAdmin: true },
     { name: 'Líneas WhatsApp', icon: Phone, href: '/admin/lines', requiresAdmin: true },
     { name: 'Respuestas Rápidas', icon: require('lucide-react').MessageSquarePlus, href: '/admin/snippets', requiresAdmin: true },
     { name: 'Etapas Kanban', icon: require('lucide-react').LayoutDashboard, href: '/admin/kanban-settings', requiresAdmin: true },

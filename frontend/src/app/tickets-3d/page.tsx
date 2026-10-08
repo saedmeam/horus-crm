@@ -270,7 +270,7 @@ export default function TicketsPage() {
             <div className="flex justify-between items-center p-5 border-b border-gray-200 dark:border-[#374248]">
               <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2">
                 <FileText className="w-5 h-5 text-blue-600 dark:text-[#00a884]" />
-                Soluciones Medicas Form
+                Orden de Servicio (3D)
               </h2>
               <div className="flex gap-2">
                 <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 border border-gray-300 dark:border-[#374248] rounded-lg text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-50 dark:hover:bg-[#202c33]">
@@ -284,73 +284,45 @@ export default function TicketsPage() {
             
             <div className="p-6 overflow-y-auto">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Nº de Incidencia</label>
-                  <input type="text" value={form.ticketNumber} disabled className="w-full border border-gray-300 dark:border-[#374248] rounded-xl px-4 py-2.5 bg-gray-100 dark:bg-[#2a3942] text-gray-900 dark:text-white outline-none cursor-not-allowed font-medium" />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Tipo de Incidencia</label>
-                  <select value={form.incidentType} onChange={e => setForm({...form, incidentType: e.target.value})} className="w-full border border-gray-300 dark:border-[#374248] rounded-xl px-4 py-2.5 bg-white dark:bg-[#202c33] text-gray-900 dark:text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-shadow">
-                    <option value="">Seleccione...</option>
-                    {incidentTypes.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
-                  </select>
-                </div>
 
-                
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Descripción del Problema</label>
-                  <textarea rows={3} value={form.description} onChange={e => setForm({...form, description: e.target.value})} placeholder="Detalle toda la información necesaria de la incidencia..." className="w-full border border-gray-300 dark:border-[#374248] rounded-xl px-4 py-3 bg-white dark:bg-[#202c33] text-gray-900 dark:text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-shadow resize-none"></textarea>
-                </div>
-
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Asunto / Título breve</label>
-                  <input type="text" value={form.subject} onChange={e => setForm({...form, subject: e.target.value})} placeholder="Ej: Falla de conexión en el servidor principal" className="w-full border border-gray-300 dark:border-[#374248] rounded-xl px-4 py-2.5 bg-white dark:bg-[#202c33] text-gray-900 dark:text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-shadow" />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Cliente</label>
-                  <select value={form.clientId} onChange={e => setForm({...form, clientId: e.target.value})} className="w-full border border-gray-300 dark:border-[#374248] rounded-xl px-4 py-2.5 bg-white dark:bg-[#202c33] text-gray-900 dark:text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-shadow">
-                    <option value="">Seleccione un cliente...</option>
-                    {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Equipo o Sistema</label>
-                  <select value={form.equipment} onChange={e => setForm({...form, equipment: e.target.value})} disabled={!form.clientId} className="w-full border border-gray-300 dark:border-[#374248] rounded-xl px-4 py-2.5 bg-white dark:bg-[#202c33] text-gray-900 dark:text-white outline-none disabled:opacity-50 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-shadow">
-                    <option value="">{form.clientId ? 'Seleccione un equipo...' : 'Primero seleccione un cliente'}</option>
-                    {filteredEquipments.map(e => <option key={e.id} value={e.name}>{e.name} {e.brand ? `(${e.brand})` : ''}</option>)}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Prioridad</label>
-                  <div className="flex rounded-xl shadow-sm border border-gray-300 dark:border-[#374248] overflow-hidden">
-                    {['Baja', 'Media', 'Alta'].map(p => (
-                      <button key={p} type="button" onClick={() => setForm({...form, priority: p})} className={`flex-1 py-2.5 text-sm font-medium transition-colors ${form.priority === p ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-bold' : 'bg-white dark:bg-[#202c33] text-gray-700 dark:text-gray-300 hover:bg-gray-50'}`}>{p}</button>
-                    ))}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Fecha *</label>
+                    <input type="datetime-local" value={form.metadata?.fecha || ''} onChange={e => setForm({...form, metadata: {...(form.metadata || {}), fecha: e.target.value}})} className="w-full border border-gray-300 dark:border-[#374248] rounded-xl px-4 py-2.5 bg-white dark:bg-[#202c33] text-gray-900 dark:text-white outline-none focus:border-blue-500 transition-shadow" />
                   </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Reportado por (Nombre)</label>
-                  <input type="text" value={form.reportedBy} onChange={e => setForm({...form, reportedBy: e.target.value})} placeholder="Ej: Dra. María Gómez" className="w-full border border-gray-300 dark:border-[#374248] rounded-xl px-4 py-2.5 bg-white dark:bg-[#202c33] text-gray-900 dark:text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-shadow" />
-                </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Cliente</label>
+                    <select value={form.clientId} onChange={e => setForm({...form, clientId: e.target.value})} className="w-full border border-gray-300 dark:border-[#374248] rounded-xl px-4 py-2.5 bg-white dark:bg-[#202c33] text-gray-900 dark:text-white outline-none focus:border-blue-500 transition-shadow">
+                      <option value="">Seleccione un cliente...</option>
+                      {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Equipo</label>
+                    <select value={form.equipment} onChange={e => setForm({...form, equipment: e.target.value})} disabled={!form.clientId} className="w-full border border-gray-300 dark:border-[#374248] rounded-xl px-4 py-2.5 bg-white dark:bg-[#202c33] text-gray-900 dark:text-white outline-none disabled:opacity-50 focus:border-blue-500 transition-shadow">
+                      <option value="">{form.clientId ? 'Seleccione un equipo...' : 'Primero seleccione un cliente'}</option>
+                      {filteredEquipments.map(e => <option key={e.id} value={e.name}>{e.name} {e.brand ? `(${e.brand})` : ''}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Servicio</label>
+                    <select value={form.incidentType} onChange={e => setForm({...form, incidentType: e.target.value})} className="w-full border border-gray-300 dark:border-[#374248] rounded-xl px-4 py-2.5 bg-white dark:bg-[#202c33] text-gray-900 dark:text-white outline-none focus:border-blue-500 transition-shadow">
+                      <option value="">Seleccione...</option>
+                      {incidentTypes.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Asesor</label>
+                    <input type="text" value={form.metadata?.asesor || ''} onChange={e => setForm({...form, metadata: {...(form.metadata || {}), asesor: e.target.value}})} placeholder="Ej: Sofia Ligorguro" className="w-full border border-gray-300 dark:border-[#374248] rounded-xl px-4 py-2.5 bg-white dark:bg-[#202c33] text-gray-900 dark:text-white outline-none focus:border-blue-500 transition-shadow" />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Compromiso</label>
+                    <div className="w-full border border-dashed border-gray-300 dark:border-[#374248] rounded-xl px-4 py-8 bg-gray-50 dark:bg-[#202c33] text-gray-400 flex flex-col items-center justify-center cursor-not-allowed">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" className="mb-2"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
+                      <span>Subir foto (próximamente)</span>
+                    </div>
+                  </div>
 
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Técnico Asignado</label>
-                  <select value={form.assignedUserId} onChange={e => setForm({...form, assignedUserId: e.target.value})} className="w-full border border-gray-300 dark:border-[#374248] rounded-xl px-4 py-2.5 bg-white dark:bg-[#202c33] text-gray-900 dark:text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-shadow">
-                    <option value="">Dejar sin asignar...</option>
-                    {users.map(u => <option key={u.id} value={u.id}>{u.name || u.username}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Estado de ticket</label>
-                  <select value={form.status} onChange={e => setForm({...form, status: e.target.value})} className="w-full border border-gray-300 dark:border-[#374248] rounded-xl px-4 py-2.5 bg-white dark:bg-[#202c33] text-gray-900 dark:text-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-shadow">
-                    <option value="ABIERTO">Abierto (Pendiente)</option>
-                    <option value="SEGUIMIENTO">En Seguimiento</option>
-                    <option value="CERRADO">Cerrado / Resuelto</option>
-                  </select>
-                </div>
-              </div>
+</div>
             </div>
           </div>
         </div>

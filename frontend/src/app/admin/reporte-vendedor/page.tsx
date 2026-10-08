@@ -6,12 +6,10 @@ import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-const STAGES = ['NUEVO_LEAD', 'EN_NEGOCIACION', 'VENTA_GANADA', 'VENTA_PERDIDA'];
-const STAGE_LABELS: Record<string, string> = { 'NUEVO_LEAD': 'Nuevo Lead', 'EN_NEGOCIACION': 'En Negociación', 'VENTA_GANADA': 'Venta Ganada', 'VENTA_PERDIDA': 'Venta Perdida' };
-
 export default function ReporteVendedorPage() {
   const [agents, setAgents] = useState<any[]>([]);
   const [conversations, setConversations] = useState<any[]>([]);
+  const [stages, setStages] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => { fetchData(); }, []);
@@ -20,34 +18,49 @@ export default function ReporteVendedorPage() {
     const token = localStorage.getItem('token');
     const api = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001';
     try {
-      const [aRes, cRes] = await Promise.all([
+      const [aRes, cRes, sRes] = await Promise.all([
         fetch(`${api}/api/users/agents`, { headers: { 'Authorization': 'Bearer ' + token } }),
-        fetch(`${api}/api/conversations`, { headers: { 'Authorization': 'Bearer ' + token } })
+        fetch(`${api}/api/conversations`, { headers: { 'Authorization': 'Bearer ' + token } }),
+        fetch(`${api}/api/settings`, { headers: { 'Authorization': 'Bearer ' + token } })
       ]);
+      
       if (aRes.ok) setAgents(await aRes.json());
       if (cRes.ok) { const d = await cRes.json(); setConversations(Array.isArray(d) ? d : []); }
+      if (sRes.ok) {
+        const d = await sRes.json();
+        setStages(d.pipelineStages || [
+            { id: 'NUEVO_LEAD', name: 'Nuevo Lead' },
+            { id: 'EN_NEGOCIACION', name: 'En Negociación' },
+            { id: 'VENTA_GANADA', name: 'Venta Ganada' },
+            { id: 'VENTA_PERDIDA', name: 'Venta Perdida' }
+        ]);
+      }
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
   const rows = useMemo(() => agents.map(a => {
     const own = conversations.filter(c => c.assignedUserId === a.id);
     const counts: Record<string, number> = {};
-    for (const s of STAGES) counts[s] = own.filter(c => c.stage === s).length;
+    for (const s of stages) counts[s.id] = own.filter(c => c.stage === s.id).length;
     return { id: a.id, name: a.name || a.username, username: a.username, total: own.length, counts };
-  }), [agents, conversations]);
+  }), [agents, conversations, stages]);
 
   const unassigned = conversations.filter(c => !c.assignedUserId).length;
 
   const exportExcel = () => {
-    const data = rows.map(r => ({ 'Vendedor': r.name, 'Usuario': r.username, 'Total': r.total, 'Nuevo Lead': r.counts.NUEVO_LEAD, 'En Negociación': r.counts.EN_NEGOCIACION, 'Venta Ganada': r.counts.VENTA_GANADA, 'Venta Perdida': r.counts.VENTA_PERDIDA }));
+    const data = rows.map(r => {
+        const row: any = { 'Vendedor': r.name, 'Usuario': r.username, 'Total': r.total };
+        stages.forEach(s => { row[s.name] = r.counts[s.id]; });
+        return row;
+    });
     const ws = XLSX.utils.json_to_sheet(data); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Vendedores');
     XLSX.writeFile(wb, `Vendedores_Horustech_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   const exportPDF = () => {
     const doc = new jsPDF(); doc.text('Reporte por Vendedor - Horustech', 14, 15);
-    const head = ['Vendedor', 'Total', 'Nuevo Lead', 'En Negociación', 'Venta Ganada', 'Venta Perdida'];
-    const body = rows.map(r => [r.name, String(r.total), String(r.counts.NUEVO_LEAD), String(r.counts.EN_NEGOCIACION), String(r.counts.VENTA_GANADA), String(r.counts.VENTA_PERDIDA)]);
+    const head = ['Vendedor', 'Total', ...stages.map(s => s.name)];
+    const body = rows.map(r => [r.name, String(r.total), ...stages.map(s => String(r.counts[s.id]))]);
     autoTable(doc, { head: [head], body, startY: 25, styles: { fontSize: 8 } });
     doc.save(`Vendedores_Horustech_${new Date().toISOString().split('T')[0]}.pdf`);
   };
@@ -73,22 +86,27 @@ export default function ReporteVendedorPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm text-gray-600">
             <thead className="bg-gray-50 text-gray-700 font-semibold border-b border-gray-100">
-              <tr><th className="px-6 py-4">Vendedor</th><th className="px-6 py-4">Total</th><th className="px-6 py-4">Nuevo Lead</th><th className="px-6 py-4">En Negociación</th><th className="px-6 py-4">Venta Ganada</th><th className="px-6 py-4">Venta Perdida</th></tr>
+              <tr>
+                <th className="px-6 py-4">Vendedor</th>
+                <th className="px-6 py-4">Total</th>
+                {stages.map(s => (
+                    <th key={s.id} className="px-6 py-4">{s.name}</th>
+                ))}
+              </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {loading ? (
-                <tr><td colSpan={6} className="p-8 text-center text-gray-400">Cargando...</td></tr>
+                <tr><td colSpan={stages.length + 2} className="p-8 text-center text-gray-400">Cargando...</td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={6} className="p-8 text-center text-gray-400">No hay vendedores.</td></tr>
+                <tr><td colSpan={stages.length + 2} className="p-8 text-center text-gray-400">No hay vendedores.</td></tr>
               ) : (
                 rows.map(r => (
                   <tr key={r.id} className="hover:bg-gray-50/50 transition-colors">
                     <td className="px-6 py-4 font-medium text-gray-900">{r.name}</td>
                     <td className="px-6 py-4 font-bold">{r.total}</td>
-                    <td className="px-6 py-4">{r.counts.NUEVO_LEAD}</td>
-                    <td className="px-6 py-4">{r.counts.EN_NEGOCIACION}</td>
-                    <td className="px-6 py-4 text-green-600 font-bold">{r.counts.VENTA_GANADA}</td>
-                    <td className="px-6 py-4 text-red-600">{r.counts.VENTA_PERDIDA}</td>
+                    {stages.map(s => (
+                        <td key={s.id} className="px-6 py-4">{r.counts[s.id]}</td>
+                    ))}
                   </tr>
                 ))
               )}

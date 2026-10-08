@@ -43,7 +43,7 @@ services:
         condition: service_healthy
     volumes:
       - uploads:/app/uploads
-    command: sh -c "until npx prisma migrate deploy >/dev/null 2>&1 || npx prisma db push >/dev/null 2>&1; do echo 'DB not ready, retrying...'; sleep 3; done; npm run seed || true; npm run seed:helpdesk || true; npm start"
+    command: sh -c "until npx prisma migrate deploy >/dev/null 2>&1 || npx prisma db push --accept-data-loss >/dev/null 2>&1; do echo 'DB not ready, retrying...'; sleep 3; done; npm run seed || true; npm run seed:helpdesk || true; npm start"
 
   frontend:
     build:
