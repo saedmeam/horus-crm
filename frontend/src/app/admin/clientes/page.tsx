@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Plus, Edit, Trash2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import Pagination from '@/components/Pagination';
 
 export default function Page() {
   const [data, setData] = useState<any[]>([]);
@@ -11,7 +12,7 @@ export default function Page() {
   const [lineFilter, setLineFilter] = useState('ALL');
   const [form, setForm] = useState({ id: '', businessLine: 'SM', code: '', cedula: '', company: '', name: '', lastNames: '', email: '', phone: '', city: '', address: '', lastServiceOrderDate: '', firstServiceOrderDate: '', clientStatus: '', incidentCount: '' });
 
-  useEffect(() => { fetchData(); }, [lineFilter]);
+  useEffect(() => { setPage(1); fetchData(); }, [lineFilter]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -26,6 +27,10 @@ export default function Page() {
 
   
   const [uploading, setUploading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number | 'todos'>(10);
+  const paginatedData = pageSize === 'todos' ? data : data.slice((page - 1) * pageSize, page * pageSize);
+
   
   const handleDownloadTemplate = () => {
     const ws = XLSX.utils.aoa_to_sheet([['Cedula', 'Empresa_Nombres', 'Apellidos']]);
@@ -130,7 +135,7 @@ export default function Page() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 dark:divide-[#202c33]">
-            {loading ? <tr><td colSpan={6} className="p-8 text-center">Cargando...</td></tr> : data.length === 0 ? <tr><td colSpan={6} className="p-8 text-center">No hay clientes</td></tr> : data.map(p => (
+            {loading ? <tr><td colSpan={6} className="p-8 text-center">Cargando...</td></tr> : data.length === 0 ? <tr><td colSpan={6} className="p-8 text-center">No hay clientes</td></tr> : paginatedData.map(p => (
               <tr key={p.id} className="hover:bg-gray-50 dark:hover:bg-[#202c33]">
                 <td className="p-4 font-bold">{p.businessLine === '3D' ? '3D SB' : 'HORUSTECH'}</td>
                 <td className="p-4">{p.cedula || '-'}</td>
@@ -145,6 +150,7 @@ export default function Page() {
             ))}
           </tbody>
         </table>
+      <Pagination total={data.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       </div>
 
       {showModal && (

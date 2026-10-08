@@ -2,82 +2,81 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 const fs = require('fs');
 
+const s = (v) => (v === '' || v === null || v === undefined ? null : String(v).trim() || null);
+
 async function main() {
   console.log('Loading JSON data...');
   const data = JSON.parse(fs.readFileSync('./seed_data.json', 'utf8'));
-  
-  // 1. Clients
+
+  // 1. Clients (por code)
   console.log('Seeding Clientes SM...');
   for (const c of data.clients) {
-    if (!c['ID Cliente']) continue;
-    await prisma.helpdeskClient.upsert({
-      where: { id: c['ID Cliente'].toString() },
-      update: {
-        name: c['Empresa'] || c['Nombre'] || 'Sin Nombre',
-        email: c['Correo'] ? c['Correo'].toString() : null,
-        phone: c['Telefono'] ? c['Telefono'].toString() : null,
-        city: c['Ciudad'] ? c['Ciudad'].toString() : null,
-        address: c['Direccion'] ? c['Direccion'].toString() : null
-      },
-      create: {
-        id: c['ID Cliente'].toString(),
-        name: c['Empresa'] || c['Nombre'] || 'Sin Nombre',
-        email: c['Correo'] ? c['Correo'].toString() : null,
-        phone: c['Telefono'] ? c['Telefono'].toString() : null,
-        city: c['Ciudad'] ? c['Ciudad'].toString() : null,
-        address: c['Direccion'] ? c['Direccion'].toString() : null
-      }
-    });
+    const code = s(c['ID Cliente']);
+    if (!code) continue;
+    const payload = {
+      code,
+      name: c['Empresa'] || c['Nombre'] || 'Sin Nombre',
+      company: s(c['Empresa']),
+      lastNames: s(c['Apellidos']),
+      cedula: s(c['Cedula']),
+      email: s(c['Correo']),
+      phone: s(c['Telefono']),
+      city: s(c['Ciudad']),
+      address: s(c['Direccion']),
+      businessLine: 'SM'
+    };
+    const existing = await prisma.helpdeskClient.findFirst({ where: { code } });
+    if (existing) await prisma.helpdeskClient.update({ where: { id: existing.id }, data: payload });
+    else await prisma.helpdeskClient.create({ data: payload });
   }
 
-  // 2. Equipments
+  // 2. Equipments (por code)
   console.log('Seeding Equipos...');
   for (const e of data.equipments) {
-    if (!e['ID Equipo'] || !e['ID Cliente']) continue;
-    
-    const clientExists = await prisma.helpdeskClient.findUnique({ where: { id: e['ID Cliente'].toString() } });
-    if (!clientExists) continue;
+    const code = s(e['ID Equipo']);
+    const clientCode = s(e['ID Cliente']);
+    if (!code || !clientCode) continue;
 
-    await prisma.helpdeskEquipment.upsert({
-      where: { id: e['ID Equipo'].toString() },
-      update: {
-        name: e['Nombre Equipo'] || 'Equipo Genérico',
-        brand: e['Marca'] ? e['Marca'].toString() : null,
-        model: e['Modelo'] ? e['Modelo'].toString() : null,
-        serial: e['Serie'] ? e['Serie'].toString() : null,
-        clientId: e['ID Cliente'].toString()
-      },
-      create: {
-        id: e['ID Equipo'].toString(),
-        name: e['Nombre Equipo'] || 'Equipo Genérico',
-        brand: e['Marca'] ? e['Marca'].toString() : null,
-        model: e['Modelo'] ? e['Modelo'].toString() : null,
-        serial: e['Serie'] ? e['Serie'].toString() : null,
-        clientId: e['ID Cliente'].toString()
-      }
-    });
+    const client = await prisma.helpdeskClient.findFirst({ where: { code: clientCode } });
+    if (!client) continue;
+
+    const payload = {
+      code,
+      name: e['Nombre Equipo'] || e['Modelo'] || 'Equipo Genérico',
+      brand: s(e['Marca']),
+      model: s(e['Modelo']),
+      serial: s(e['Serie']),
+      clientId: client.id,
+      businessLine: 'SM'
+    };
+    const existing = await prisma.helpdeskEquipment.findFirst({ where: { code } });
+    if (existing) await prisma.helpdeskEquipment.update({ where: { id: existing.id }, data: payload });
+    else await prisma.helpdeskEquipment.create({ data: payload });
   }
 
-  // 3. Incident Types
+  // 3. Incident Types (sin code -> por name + businessLine)
   console.log('Seeding Servicios SM (Tipos de Incidencia)...');
-  for (const s of data.incidents) {
-    if (!s['Id Servicio'] || !s['Tipo']) continue;
-    await prisma.helpdeskIncidentType.upsert({
-      where: { id: s['Id Servicio'].toString() },
-      update: { name: s['Tipo'].toString() },
-      create: { id: s['Id Servicio'].toString(), name: s['Tipo'].toString() }
-    });
+  for (const it of data.incidents) {
+    const name = s(it['Tipo']) || s(it['Nombre']);
+    if (!name) continue;
+    const existing = await prisma.helpdeskIncidentType.findFirst({ where: { name, businessLine: 'SM' } });
+    if (!existing) await prisma.helpdeskIncidentType.create({ data: { name, businessLine: 'SM' } });
   }
 
-  // 4. Task Types
+  // 4. Task Types (por code)
   console.log('Seeding Tareas SM (Tipos de Tareas)...');
   for (const t of data.tasks) {
-    if (!t['Id Tarea'] || !t['Tipo']) continue;
-    await prisma.helpdeskTaskType.upsert({
-      where: { id: t['Id Tarea'].toString() },
-      update: { name: t['Tipo'].toString() },
-      create: { id: t['Id Tarea'].toString(), name: t['Tipo'].toString() }
-    });
+    const code = s(t['Id Tarea']);
+    const name = s(t['Tipo']) || s(t['Nombre']) || s(t['name']);
+    if (!code && !name) continue;
+    const payload = { name: name || code };
+    if (code) payload.code = code;
+    payload.businessLine = 'SM';
+    const existing = code
+      ? await prisma.helpdeskTaskType.findFirst({ where: { code } })
+      : await prisma.helpdeskTaskType.findFirst({ where: { name, businessLine: 'SM' } });
+    if (existing) await prisma.helpdeskTaskType.update({ where: { id: existing.id }, data: payload });
+    else await prisma.helpdeskTaskType.create({ data: payload });
   }
 
   console.log('Seeding completed!');

@@ -80,6 +80,43 @@ async function main() {
     else await prisma.helpdeskReception.create({ data: payload });
   }
 
+  // 4b. Tipos ETA
+  const etas = data.etaTypes || [];
+  console.log('Seeding Tipos ETA (' + etas.length + ')...');
+  for (const e of etas) {
+    const code = s(e['Id Tipo ETA']);
+    if (!code) continue;
+    const businessLine = e.__line || '3D';
+    const payload = {
+      code, type: s(e['Tipo']), description: s(e['Descripcion']), service: s(e['Servicio']), businessLine
+    };
+    const existing = await prisma.helpdeskEtaType.findFirst({ where: { code, businessLine } });
+    if (existing) await prisma.helpdeskEtaType.update({ where: { id: existing.id }, data: payload });
+    else await prisma.helpdeskEtaType.create({ data: payload });
+  }
+
+  // 4c. Proveedores (3D)
+  const providers = ['empresa 1', 'amazon', 'aliexpress', 'compra local', 'horustech'];
+  console.log('Seeding Proveedores (' + providers.length + ')...');
+  for (const name of providers) {
+    const existing = await prisma.helpdeskProvider.findFirst({ where: { name, businessLine: '3D' } });
+    if (!existing) await prisma.helpdeskProvider.create({ data: { name, businessLine: '3D' } });
+  }
+
+  // 4d. Repuestos (3D)
+  const spareParts = [
+    'Boquilla 0.4mm Latón MK8', 'Tubo PTFE Bowden 1m', 'Correa GT2 6mm', 'Polea GT2 20 dientes',
+    'Rodamiento LM8UU', 'Hotend Completo V6 24V', 'Cartucho Calefactor 24V 40W', 'Termistor NTC 100K',
+    'Motor NEMA 17', 'Fuente de Poder 24V 15A', 'Hotend bambulab A1', 'Display fotocurado',
+    'Cable de transmisión para bambulab A1', 'HOTEND COMPLETO PARA HI COMBO',
+    'SENSOR DE FILAMENTO PARA P2S', 'Mainboard hotend hi combo'
+  ];
+  console.log('Seeding Repuestos (' + spareParts.length + ')...');
+  for (const name of spareParts) {
+    const existing = await prisma.helpdeskSparePart.findFirst({ where: { name, businessLine: '3D' } });
+    if (!existing) await prisma.helpdeskSparePart.create({ data: { name, businessLine: '3D' } });
+  }
+
   // 5. Crear "3d" (padre) por combo único cliente+equipo+servicio
   console.log('Creando órdenes 3D (padre)...');
   const comboKey = (cl, eq, sv) => [cl || '', eq || '', sv || ''].join('|');

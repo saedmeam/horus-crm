@@ -14,6 +14,10 @@ export default function Page() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number | 'todos'>(10);
+  const paginatedData = pageSize === 'todos' ? data : data.slice((page - 1) * pageSize, page * pageSize);
+
   const [form, setForm] = useState({ id: '', code: '', fecha: '', clienteId: '', equipoId: '', servicioId: '', asesor: '', compromiso: '' });
 
   useEffect(() => { fetchData(); fetchCatalogs(); }, []);
@@ -113,7 +117,7 @@ export default function Page() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 dark:divide-[#202c33]">
-            {loading ? <tr><td colSpan={7} className="p-8 text-center">Cargando...</td></tr> : data.length === 0 ? <tr><td colSpan={7} className="p-8 text-center">No hay registros</td></tr> : data.map(o => (
+            {loading ? <tr><td colSpan={7} className="p-8 text-center">Cargando...</td></tr> : data.length === 0 ? <tr><td colSpan={7} className="p-8 text-center">No hay registros</td></tr> : paginatedData.map(o => (
               <tr key={o.id} className="hover:bg-gray-50 dark:hover:bg-[#202c33]">
                 <td className="p-4">{o.code || '—'}</td>
                 <td className="p-4">{o.fecha ? new Date(o.fecha).toLocaleDateString() : '—'}</td>
@@ -129,6 +133,7 @@ export default function Page() {
             ))}
           </tbody>
         </table>
+      <Pagination total={data.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       </div>
 
       {showModal && (
