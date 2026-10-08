@@ -39,6 +39,7 @@ async function main() {
     const equipCode = s(t['ID Equipo']);
     const payload = {
       ticketNumber,
+      businessLine: 'SM',
       incidentType: incMap[s(t['ID Tipo Ticket'])] || s(t['ID Tipo Ticket']),
       subject: s(t['Tarea']).slice(0, 200),
       description: s(t['Tarea']),
@@ -62,6 +63,7 @@ async function main() {
   for (const t of tickets) ticketByNumber[t.ticketNumber] = t.id;
 
   console.log('Seeding Reports SM (' + data.reports.length + ')...');
+  await prisma.ticketReport.deleteMany({});
   let rc = 0;
   for (const r of data.reports) {
     const ticketId = ticketByNumber[s(r['ID Ticket'])];

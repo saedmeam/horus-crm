@@ -226,6 +226,7 @@ model PushSubscription {
 model Ticket {
   id               String    @id @default(uuid())
   ticketNumber     String    @unique // Ej: IDISM0972
+  businessLine     String?   @default("SM") // SM o 3D
   incidentType     String?
   subject          String?
   description      String?   @db.Text
