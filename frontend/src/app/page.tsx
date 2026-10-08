@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { io, Socket } from 'socket.io-client';
 import MainSidebar from '@/components/MainSidebar';
@@ -58,8 +58,8 @@ export default function CRMChatLayout() {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
-  const audioChunksRef = require('react').useRef<Blob[]>([]);
-  const recordingTimerRef = require('react').useRef<any>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef = useRef<any>(null);
 
   const [reminders, setReminders] = useState<any[]>([]);
 const [backorders, setBackorders] = useState<any[]>([]);
@@ -75,8 +75,8 @@ const [boNotes, setBoNotes] = useState('');
   const [reminderNotes, setReminderNotes] = useState('');
   const [reminderDate, setReminderDate] = useState('');
   const [reminderTime, setReminderTime] = useState('');
-  const messagesEndRef = require('react').useRef<HTMLDivElement>(null);
-  const chatScrollRef = require('react').useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
   const [showScrollDown, setShowScrollDown] = useState(false);
   
   const scrollToBottom = (behavior: 'auto' | 'smooth' = 'auto') => {
@@ -87,14 +87,14 @@ const [boNotes, setBoNotes] = useState('');
     }, 150);
   };
   
-  require('react').useEffect(() => {
+  useEffect(() => {
     // Solo scrollear cuando tenemos mensajes cargados
     if (messages && messages.length > 0) {
       scrollToBottom('auto');
     }
   }, [selectedChat, messages]);
   const [socket, setSocket] = useState<Socket | null>(null);
-  const selectedChatRef = require('react').useRef<any>(null);
+  const selectedChatRef = useRef<any>(null);
 
   // Mantener el chat seleccionado actualizado sin reconectar el socket
   useEffect(() => {
@@ -430,7 +430,7 @@ const [showInfo, setShowInfo] = useState(false);
             const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
             const canViewAll = currentUser?.roleData?.canViewAllChats === true || currentUser?.role?.name === 'SUPERADMIN' || currentUser?.role === 'SUPERADMIN' || currentUser?.role?.name === 'ADMIN' || currentUser?.role === 'ADMIN';
             
-            const myLineIds = currentUser?.lines?.map((l) => l.id) || [];
+            const myLineIds = currentUser?.lines?.map((l: any) => l.id) || [];
             const isMine = ctx.assignedUserId === currentUser?.id;
             const isUnassignedButInMyLine = !ctx.assignedUserId && myLineIds.includes(ctx.whatsappLineId);
             const isLegacy = !ctx.assignedUserId && !ctx.whatsappLineId;
@@ -700,7 +700,7 @@ const handleSelectMetaTemplate = (t: any) => {
          }
          let d = {};
          try { d = await res.json(); } catch(e) {}
-         toast.error('Error al enviar plantilla: ' + (d.error || 'Error de Meta'));
+         toast.error('Error al enviar plantilla: ' + ((d as any).error || 'Error de Meta'));
       } else {
          setInputText('');
       }
@@ -1211,7 +1211,7 @@ const handleSelectMetaTemplate = (t: any) => {
                                     ) : msg.status === 'SENT' ? (
                                       <Check className="w-3.5 h-3.5 text-gray-400" />
                                     ) : msg.status === 'FAILED' ? (
-                                      <X className="w-3.5 h-3.5 text-red-500" title="Error" />
+                                      <X className="w-3.5 h-3.5 text-red-500" />
                                     ) : (
                                       <Check className="w-3.5 h-3.5 text-gray-300" />
                                     )}

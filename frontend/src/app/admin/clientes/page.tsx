@@ -115,7 +115,7 @@ export default function Page() {
             {uploading ? 'Cargando...' : 'Carga Masiva (Excel)'}
             <input type="file" accept=".xlsx, .xls" className="hidden" onChange={handleFileUpload} disabled={uploading} />
           </label>
-          <button onClick={() => { setForm({ id: '', businessLine: 'SM', name: '', cedula: '', lastNames: '', email: '', phone: '', city: '', address: '' }); setShowModal(true); }} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2">
+          <button onClick={() => { setForm({ id: '', businessLine: 'SM', code: '', cedula: '', company: '', name: '', lastNames: '', email: '', phone: '', city: '', address: '', lastServiceOrderDate: '', firstServiceOrderDate: '', clientStatus: '', incidentCount: '' }); setShowModal(true); }} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2">
             <Plus size={18} /> Nuevo
           </button>
         </div>

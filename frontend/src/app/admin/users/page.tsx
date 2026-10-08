@@ -47,7 +47,7 @@ export default function UsersPage() {
 
   const openCreate = () => {
     setEditingUserId(null);
-    setFormData({ name: '', username: '', email: '', password: '', role: '', signatureUrl: '', lineIds: [] });
+    setFormData({ name: '', username: '', email: '', password: '', role: '', lineIds: [], businessLine: '', signatureUrl: '' });
     setShowModal(true);
   };
 

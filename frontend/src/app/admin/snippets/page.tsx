@@ -84,7 +84,7 @@ export default function SnippetsPage() {
   };
 
   const handleAddSnippet = () => {
-    let shortcut = newSnippetShortcut.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    const shortcut = newSnippetShortcut.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
     const text = newSnippetText.trim();
     if (!shortcut) return;
     

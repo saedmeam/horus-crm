@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import MainSidebar from '@/components/MainSidebar';
 import * as XLSX from 'xlsx';
 import { Plus, Download, Search, X, LifeBuoy, FileText } from 'lucide-react';
+import Pagination from '@/components/Pagination';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
@@ -14,6 +15,10 @@ export default function TicketsPage() {
   const [equipments, setEquipments] = useState<any[]>([]);
   const [incidentTypes, setIncidentTypes] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number | 'todos'>(10);
+  const paginatedTickets = pageSize === 'todos' ? tickets : tickets.slice((page - 1) * pageSize, page * pageSize);
   
   const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -229,7 +234,7 @@ export default function TicketsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-[#374248]">
-                {tickets.map(t => (
+                {paginatedTickets.map(t => (
                   <tr key={t.id} onClick={() => router.push(`/tickets-sm/${t.id}`)} className="hover:bg-gray-50 dark:hover:bg-[#2a3942] transition-colors cursor-pointer">
                     <td className="p-4 text-sm font-medium text-blue-600 dark:text-[#00a884]">{t.ticketNumber}</td>
                     <td className="p-4 text-sm text-gray-800 dark:text-gray-200">{t.client?.name || 'Sin Cliente'}</td>
@@ -260,6 +265,7 @@ export default function TicketsPage() {
                 )}
               </tbody>
             </table>
+            <Pagination total={tickets.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
           </div>
         </main>
       </div>

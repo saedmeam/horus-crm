@@ -66,7 +66,7 @@ export default function HelpdeskCatalogs() {
     const token = localStorage.getItem('token');
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001';
     let endpoint = '';
-    let bodyData: any = { name };
+    const bodyData: any = { name };
 
     if (activeTab === 'clients') endpoint = '/api/helpdesk/clients';
     if (activeTab === 'equipments') {

@@ -136,7 +136,7 @@ export default function GlobalAlerts() {
             localStorage.setItem('alerted_' + due.id, 'true');
             setActiveAlert(due);
             setTimeout(() => {
-              setActiveAlert((currentAlert) => {
+              setActiveAlert((currentAlert: any) => {
                 if (currentAlert && currentAlert.id === due.id) return null;
                 return currentAlert;
               });

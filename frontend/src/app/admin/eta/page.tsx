@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { Plus, Edit, Trash2, Download, Upload } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import Pagination from '@/components/Pagination';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001';
 const auth = () => ({ 'Authorization': 'Bearer ' + localStorage.getItem('token') });

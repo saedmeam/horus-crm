@@ -129,7 +129,7 @@ export default function Page() {
             {uploading ? 'Cargando...' : 'Carga Masiva (Excel)'}
             <input type="file" accept=".xlsx, .xls" className="hidden" onChange={handleFileUpload} disabled={uploading} />
           </label>
-          <button onClick={() => { setForm({ id: '', businessLine: 'SM', name: '', brand: '', model: '', serial: '', clientId: '' }); setShowModal(true); }} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2">
+          <button onClick={() => { setForm({ id: '', businessLine: 'SM', code: '', name: '', brand: '', model: '', serial: '', clientId: '', modality: '', date: '', installDate: '', warrantyEndDate: '', contractStartDate: '', contractEndDate: '' }); setShowModal(true); }} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2">
             <Plus size={18} /> Nuevo
           </button>
         </div>
@@ -157,7 +157,7 @@ export default function Page() {
                 <td className="p-4">{p.brand || '-'} / {p.model || '-'}</td>
                 <td className="p-4">{p.serial || '-'}</td>
                 <td className="p-4 flex justify-end gap-2">
-                  <button onClick={() => { setForm({id: p.id, businessLine: p.businessLine, name: p.name, brand: p.brand||'', model: p.model||'', serial: p.serial||'', clientId: p.clientId||''}); setShowModal(true); }} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"><Edit size={18}/></button>
+                  <button onClick={() => { setForm({ id: p.id, businessLine: p.businessLine, code: (p as any).code || '', name: p.name, brand: p.brand||'', model: p.model||'', serial: p.serial||'', clientId: p.clientId||'', modality: (p as any).modality || '', date: (p as any).date || '', installDate: (p as any).installDate || '', warrantyEndDate: (p as any).warrantyEndDate || '', contractStartDate: (p as any).contractStartDate || '', contractEndDate: (p as any).contractEndDate || '' }); setShowModal(true); }} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"><Edit size={18}/></button>
                   <button onClick={() => handleDelete(p.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg"><Trash2 size={18}/></button>
                 </td>
               </tr>

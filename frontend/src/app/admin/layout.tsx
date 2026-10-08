@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { Users, Phone, Settings, LogOut, BellRing } from 'lucide-react';
+import { Users, Phone, Settings, LogOut, BellRing, BarChart3, Shield, Server, AlertTriangle, CheckSquare, Truck, Wrench, Briefcase, UserCheck, Clock, MessageSquarePlus, LayoutDashboard, List, Package, TrendingUp, AlarmClock, FileText, Globe } from 'lucide-react';
 import Link from 'next/link';
 import MainSidebar from '@/components/MainSidebar';
 
@@ -26,30 +26,30 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const isAdmin = user.role === 'SUPERADMIN' || user.role === 'ADMIN';
 
   const allNavItems = [
-    { name: 'Dashboard', icon: require('lucide-react').BarChart3, href: '/admin/dashboard', requiresAdmin: true },
+    { name: 'Dashboard', icon: BarChart3, href: '/admin/dashboard', requiresAdmin: true },
     { name: 'Notificaciones', icon: BellRing, href: '/admin/notificaciones', requiresAdmin: false },
-    { name: 'Roles', icon: require('lucide-react').Shield, href: '/admin/roles', requiresAdmin: true },
+    { name: 'Roles', icon: Shield, href: '/admin/roles', requiresAdmin: true },
     { name: 'Usuarios', icon: Users, href: '/admin/users', requiresAdmin: true },
     
-      { name: 'Catálogo: Clientes', icon: require('lucide-react').Users, href: '/admin/clientes', requiresAdmin: true },
-    { name: 'Catálogo: Equipos', icon: require('lucide-react').Server, href: '/admin/equipos', requiresAdmin: true },
-    { name: 'Catálogo: Incidencias', icon: require('lucide-react').AlertTriangle, href: '/admin/incidencias', requiresAdmin: true },
-    { name: 'Catálogo: Tareas', icon: require('lucide-react').CheckSquare, href: '/admin/tareas', requiresAdmin: true },
-    { name: 'Catálogo: Proveedores', icon: require('lucide-react').Truck, href: '/admin/proveedores', requiresAdmin: true },
-    { name: 'Catálogo: Repuestos', icon: require('lucide-react').Wrench, href: '/admin/repuestos', requiresAdmin: true },
-    { name: 'Catálogo: Servicios', icon: require('lucide-react').Briefcase, href: '/admin/servicios', requiresAdmin: true },
-    { name: 'Catálogo: Recepción', icon: require('lucide-react').UserCheck, href: '/admin/recepcion', requiresAdmin: true },
-    { name: 'Catálogo: ETA', icon: require('lucide-react').Clock, href: '/admin/eta', requiresAdmin: true },
+      { name: 'Catálogo: Clientes', icon: Users, href: '/admin/clientes', requiresAdmin: true },
+    { name: 'Catálogo: Equipos', icon: Server, href: '/admin/equipos', requiresAdmin: true },
+    { name: 'Catálogo: Incidencias', icon: AlertTriangle, href: '/admin/incidencias', requiresAdmin: true },
+    { name: 'Catálogo: Tareas', icon: CheckSquare, href: '/admin/tareas', requiresAdmin: true },
+    { name: 'Catálogo: Proveedores', icon: Truck, href: '/admin/proveedores', requiresAdmin: true },
+    { name: 'Catálogo: Repuestos', icon: Wrench, href: '/admin/repuestos', requiresAdmin: true },
+    { name: 'Catálogo: Servicios', icon: Briefcase, href: '/admin/servicios', requiresAdmin: true },
+    { name: 'Catálogo: Recepción', icon: UserCheck, href: '/admin/recepcion', requiresAdmin: true },
+    { name: 'Catálogo: ETA', icon: Clock, href: '/admin/eta', requiresAdmin: true },
     { name: 'Líneas WhatsApp', icon: Phone, href: '/admin/lines', requiresAdmin: true },
-    { name: 'Respuestas Rápidas', icon: require('lucide-react').MessageSquarePlus, href: '/admin/snippets', requiresAdmin: true },
-    { name: 'Etapas Kanban', icon: require('lucide-react').LayoutDashboard, href: '/admin/kanban-settings', requiresAdmin: true },
-    { name: 'Campos Contactos', icon: require('lucide-react').List, href: '/admin/contact-fields', requiresAdmin: true },
-    { name: 'Reporte Pedidos', icon: require('lucide-react').Package, href: '/admin/pedidos', requiresAdmin: true },
-    { name: 'Reporte Ventas', icon: require('lucide-react').TrendingUp, href: '/admin/ventas', requiresAdmin: true },
-    { name: 'Reporte Vendedor', icon: require('lucide-react').Users, href: '/admin/reporte-vendedor', requiresAdmin: true },
-    { name: 'Reporte Recordatorios', icon: require('lucide-react').AlarmClock, href: '/admin/recordatorios', requiresAdmin: true },
-    { name: 'Plantillas Meta', icon: require('lucide-react').FileText, href: '/admin/plantillas', requiresAdmin: true },
-    { name: 'Configuración API', icon: require('lucide-react').Globe, href: '/admin/configuracion', requiresAdmin: true },
+    { name: 'Respuestas Rápidas', icon: MessageSquarePlus, href: '/admin/snippets', requiresAdmin: true },
+    { name: 'Etapas Kanban', icon: LayoutDashboard, href: '/admin/kanban-settings', requiresAdmin: true },
+    { name: 'Campos Contactos', icon: List, href: '/admin/contact-fields', requiresAdmin: true },
+    { name: 'Reporte Pedidos', icon: Package, href: '/admin/pedidos', requiresAdmin: true },
+    { name: 'Reporte Ventas', icon: TrendingUp, href: '/admin/ventas', requiresAdmin: true },
+    { name: 'Reporte Vendedor', icon: Users, href: '/admin/reporte-vendedor', requiresAdmin: true },
+    { name: 'Reporte Recordatorios', icon: AlarmClock, href: '/admin/recordatorios', requiresAdmin: true },
+    { name: 'Plantillas Meta', icon: FileText, href: '/admin/plantillas', requiresAdmin: true },
+    { name: 'Configuración API', icon: Globe, href: '/admin/configuracion', requiresAdmin: true },
   ];
 
   const navItems = allNavItems.filter(item => !item.requiresAdmin || isAdmin);
@@ -65,7 +65,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <h2 className="text-xl font-bold text-gray-800">Configuración</h2>
         </div>
         
-        <div className="p-4 flex-1">
+        <div className="p-4 flex-1 min-h-0 overflow-y-auto">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4 px-2">Opciones</p>
           <nav className="space-y-1">
             {navItems.map((item) => {
