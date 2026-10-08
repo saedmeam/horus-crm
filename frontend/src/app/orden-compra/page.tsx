@@ -2,6 +2,8 @@
 import { useEffect, useState } from 'react';
 import { Plus, Edit, Trash2, Download, Upload } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import Pagination from '@/components/Pagination';
+import MainSidebar from '@/components/MainSidebar';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001';
 const auth = () => ({ 'Authorization': 'Bearer ' + localStorage.getItem('token') });
@@ -9,6 +11,7 @@ const auth = () => ({ 'Authorization': 'Bearer ' + localStorage.getItem('token')
 const empty = { id: '', serviceOrderId: '', ordenNo: '', fecha: '', recepcion: '', observaciones: '', precio: '', abono: '', subtotal: '', nombreAsesor: '', estado: '', tarea: '', diagnosticoRealizado: '', tecnico: '', servicioRealizado: '', cobrado: '', entregado: '' };
 
 export default function Page() {
+  const [user, setUser] = useState<any>(null);
   const [data, setData] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -20,7 +23,7 @@ export default function Page() {
 
   const [form, setForm] = useState({ ...empty });
 
-  useEffect(() => { fetchData(); fetchOrders(); }, []);
+  useEffect(() => { const u = localStorage.getItem('user'); if (u) setUser(JSON.parse(u)); fetchData(); fetchOrders(); }, []);
 
   const fetchData = async () => {
     setLoading(true);
@@ -88,7 +91,11 @@ export default function Page() {
   const orderLabel = (o: any) => `${o.cliente?.name || ''} - ${o.fecha ? new Date(o.fecha).toLocaleDateString() : ''}`;
 
   return (
-    <div className="p-6">
+    <div className="flex h-screen w-full bg-[#f4f7f6] dark:bg-[#111b21] overflow-hidden">
+      <MainSidebar user={user} />
+      <div className="flex-1 flex flex-col h-full overflow-hidden">
+        <main className="flex-1 overflow-y-auto">
+          <div className="p-6">
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Órdenes de Compra</h1>
@@ -225,6 +232,9 @@ export default function Page() {
           </div>
         </div>
       )}
+          </div>
+        </main>
+      </div>
     </div>
   );
 }

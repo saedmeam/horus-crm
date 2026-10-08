@@ -40,8 +40,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     { name: 'Catálogo: Servicios', icon: require('lucide-react').Briefcase, href: '/admin/servicios', requiresAdmin: true },
     { name: 'Catálogo: Recepción', icon: require('lucide-react').UserCheck, href: '/admin/recepcion', requiresAdmin: true },
     { name: 'Catálogo: ETA', icon: require('lucide-react').Clock, href: '/admin/eta', requiresAdmin: true },
-    { name: 'Soporte 3D', icon: require('lucide-react').Box, href: '/admin/soporte-3d', requiresAdmin: true },
-    { name: 'Órdenes de Compra', icon: require('lucide-react').ShoppingCart, href: '/admin/orden-compra', requiresAdmin: true },
     { name: 'Líneas WhatsApp', icon: Phone, href: '/admin/lines', requiresAdmin: true },
     { name: 'Respuestas Rápidas', icon: require('lucide-react').MessageSquarePlus, href: '/admin/snippets', requiresAdmin: true },
     { name: 'Etapas Kanban', icon: require('lucide-react').LayoutDashboard, href: '/admin/kanban-settings', requiresAdmin: true },

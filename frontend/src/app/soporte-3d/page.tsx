@@ -2,11 +2,14 @@
 import { useEffect, useState } from 'react';
 import { Plus, Edit, Trash2, Download, Upload } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import Pagination from '@/components/Pagination';
+import MainSidebar from '@/components/MainSidebar';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001';
 const auth = () => ({ 'Authorization': 'Bearer ' + localStorage.getItem('token') });
 
 export default function Page() {
+  const [user, setUser] = useState<any>(null);
   const [data, setData] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
   const [equipments, setEquipments] = useState<any[]>([]);
@@ -20,7 +23,7 @@ export default function Page() {
 
   const [form, setForm] = useState({ id: '', code: '', fecha: '', clienteId: '', equipoId: '', servicioId: '', asesor: '', compromiso: '' });
 
-  useEffect(() => { fetchData(); fetchCatalogs(); }, []);
+  useEffect(() => { const u = localStorage.getItem('user'); if (u) setUser(JSON.parse(u)); fetchData(); fetchCatalogs(); }, []);
 
   const fetchData = async () => {
     setLoading(true);
@@ -86,7 +89,11 @@ export default function Page() {
   const inputCls = 'w-full border rounded-lg px-3 py-2 bg-white dark:bg-[#202c33] text-gray-900 dark:text-white';
 
   return (
-    <div className="p-6">
+    <div className="flex h-screen w-full bg-[#f4f7f6] dark:bg-[#111b21] overflow-hidden">
+      <MainSidebar user={user} />
+      <div className="flex-1 flex flex-col h-full overflow-hidden">
+        <main className="flex-1 overflow-y-auto">
+          <div className="p-6">
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Soporte 3D</h1>
@@ -189,6 +196,9 @@ export default function Page() {
           </div>
         </div>
       )}
+          </div>
+        </main>
+      </div>
     </div>
   );
 }
