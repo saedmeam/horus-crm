@@ -37,8 +37,8 @@ export default function ConfiguracionAdminPage() {
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
-  
-  
+
+
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,7 +55,7 @@ export default function ConfiguracionAdminPage() {
   };
 
   const copyWebhook = () => {
-    try { navigator.clipboard?.writeText(webhookUrl); } catch (e) {}
+    try { navigator.clipboard?.writeText(webhookUrl); } catch (e) { }
     setCopied(true); setTimeout(() => setCopied(false), 2000);
   };
 
@@ -128,6 +128,6 @@ export default function ConfiguracionAdminPage() {
         </div>
       </form>
 
-      </div>
+    </div>
   );
 }
