@@ -17,6 +17,6 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: 22
           script: |
-            cd /opt/horus-crm
+            cd /opt/horus-cr
             git pull origin main
             docker compose up -d --build

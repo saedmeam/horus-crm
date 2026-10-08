@@ -8,7 +8,9 @@ export default function ConfiguracionAdminPage() {
   const [settings, setSettings] = useState({
     WHATSAPP_TOKEN: '',
     WABA_ID: '',
-    WHATSAPP_VERIFY_TOKEN: ''
+    WHATSAPP_VERIFY_TOKEN: '',
+    NGROK_URL: '',
+    NGROK_AUTHTOKEN: ''
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -27,7 +29,9 @@ export default function ConfiguracionAdminPage() {
         setSettings({
           WHATSAPP_TOKEN: data.WHATSAPP_TOKEN || '',
           WABA_ID: data.WABA_ID || '',
-          WHATSAPP_VERIFY_TOKEN: data.WHATSAPP_VERIFY_TOKEN || ''
+          WHATSAPP_VERIFY_TOKEN: data.WHATSAPP_VERIFY_TOKEN || '',
+          NGROK_URL: data.NGROK_URL || '',
+          NGROK_AUTHTOKEN: data.NGROK_AUTHTOKEN || ''
         });
       }
     } catch (e) { console.error(e); } finally { setLoading(false); }
@@ -99,6 +103,20 @@ export default function ConfiguracionAdminPage() {
               <label className="block text-sm font-semibold text-gray-700 mb-1">Token de Verificación (Verify Token)</label>
               <input type="text" value={settings.WHATSAPP_VERIFY_TOKEN} onChange={e => setSettings({ ...settings, WHATSAPP_VERIFY_TOKEN: e.target.value })} className={inputClass} placeholder="mi_token_secreto_horustech" />
               <p className="text-xs text-gray-400 mt-1">Debe coincidir con el "Verify token" que pones en Meta al configurar el webhook.</p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <h3 className="text-lg font-bold flex items-center gap-2 text-gray-800 border-b pb-2"><Globe size={20} className="text-purple-500" /> Ngrok (Túnel)</h3>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">URL de Ngrok</label>
+              <input type="text" value={settings.NGROK_URL} onChange={e => setSettings({ ...settings, NGROK_URL: e.target.value })} className={inputClass} placeholder="https://knee-eclair-agnostic.ngrok-free.dev" />
+              <p className="text-xs text-gray-400 mt-1">URL pública del túnel para pruebas sin dominio.</p>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Token de Ngrok (Authtoken)</label>
+              <input type="password" value={settings.NGROK_AUTHTOKEN} onChange={e => setSettings({ ...settings, NGROK_AUTHTOKEN: e.target.value })} className={inputClass} placeholder="3JxtDqC..." />
+              <p className="text-xs text-gray-400 mt-1">Se guarda encriptado en la base de datos.</p>
             </div>
           </div>
         </div>

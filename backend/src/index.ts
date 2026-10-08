@@ -12,6 +12,7 @@ import { PrismaClient, ConversationStatus, SenderType } from '@prisma/client';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { setVapidDetails, sendNotification } from 'web-push';
+import * as crypto from 'crypto';
 
 dotenv.config();
 
@@ -36,6 +37,49 @@ app.use((req: any, res: any, next: any) => {
 
 const prisma = new PrismaClient();
 
+const ENCRYPTION_KEY = crypto.createHash('sha256').update(process.env.JWT_SECRET || 'horus_secret').digest();
+const SENSITIVE_FIELDS = ['WHATSAPP_TOKEN', 'WHATSAPP_VERIFY_TOKEN', 'NGROK_AUTHTOKEN'];
+
+function encryptSetting(text: string): string {
+  if (!text) return '';
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', ENCRYPTION_KEY, iv);
+  const enc = Buffer.concat([cipher.update(text, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `enc:${iv.toString('hex')}:${tag.toString('hex')}:${enc.toString('hex')}`;
+}
+
+function decryptSetting(text: string): string {
+  if (!text) return '';
+  if (!text.startsWith('enc:')) return text;
+  const parts = text.slice(4).split(':');
+  if (parts.length !== 3) return text;
+  try {
+    const decipher = crypto.createDecipheriv('aes-256-gcm', ENCRYPTION_KEY, Buffer.from(parts[0], 'hex'));
+    decipher.setAuthTag(Buffer.from(parts[1], 'hex'));
+    const dec = Buffer.concat([decipher.update(Buffer.from(parts[2], 'hex')), decipher.final()]);
+    return dec.toString('utf8');
+  } catch (e) {
+    return text;
+  }
+}
+
+function encryptSensitive(obj: any): any {
+  const out: any = { ...obj };
+  for (const f of SENSITIVE_FIELDS) {
+    if (out[f]) out[f] = encryptSetting(String(out[f]));
+  }
+  return out;
+}
+
+function decryptSensitive(obj: any): any {
+  const out: any = { ...obj };
+  for (const f of SENSITIVE_FIELDS) {
+    if (out[f]) out[f] = decryptSetting(String(out[f]));
+  }
+  return out;
+}
+
 // Web Push (notificaciones con la pestaña cerrada)
 const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || '';
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || '';
@@ -51,11 +95,14 @@ const getMetaCredentials = async () => {
   try {
     const setting = await prisma.systemSetting.findUnique({ where: { id: 'default' } });
     const data: any = setting?.data || {};
+    const decrypted = decryptSensitive(data);
     return {
-      whatsappToken: data.WHATSAPP_TOKEN || process.env.WHATSAPP_TOKEN,
-      verifyToken: data.WHATSAPP_VERIFY_TOKEN || process.env.WHATSAPP_VERIFY_TOKEN,
+      whatsappToken: decrypted.WHATSAPP_TOKEN || process.env.WHATSAPP_TOKEN,
+      verifyToken: decrypted.WHATSAPP_VERIFY_TOKEN || process.env.WHATSAPP_VERIFY_TOKEN,
       wabaId: data.WABA_ID || '',
-      phoneNumberId: data.DEFAULT_PHONE_NUMBER_ID || process.env.DEFAULT_PHONE_NUMBER_ID
+      phoneNumberId: data.DEFAULT_PHONE_NUMBER_ID || process.env.DEFAULT_PHONE_NUMBER_ID,
+      ngrokUrl: data.NGROK_URL || process.env.NGROK_URL || '',
+      ngrokAuthToken: decrypted.NGROK_AUTHTOKEN || process.env.NGROK_AUTHTOKEN || ''
     };
   } catch (e) {
     console.error('Error leyendo credenciales Meta:', e);
@@ -63,7 +110,9 @@ const getMetaCredentials = async () => {
       whatsappToken: process.env.WHATSAPP_TOKEN || '',
       verifyToken: process.env.WHATSAPP_VERIFY_TOKEN || '',
       wabaId: '',
-      phoneNumberId: process.env.DEFAULT_PHONE_NUMBER_ID || ''
+      phoneNumberId: process.env.DEFAULT_PHONE_NUMBER_ID || '',
+      ngrokUrl: process.env.NGROK_URL || '',
+      ngrokAuthToken: process.env.NGROK_AUTHTOKEN || ''
     };
   }
 };
@@ -90,11 +139,14 @@ app.get('/api/meta-settings', authenticateToken, async (req: any, res: any) => {
     }
     const setting = await prisma.systemSetting.findUnique({ where: { id: 'default' } });
     const data: any = setting?.data || {};
+    const decrypted = decryptSensitive(data);
     res.json({
-      WHATSAPP_TOKEN: data.WHATSAPP_TOKEN || '',
-      WHATSAPP_VERIFY_TOKEN: data.WHATSAPP_VERIFY_TOKEN || '',
+      WHATSAPP_TOKEN: decrypted.WHATSAPP_TOKEN || '',
+      WHATSAPP_VERIFY_TOKEN: decrypted.WHATSAPP_VERIFY_TOKEN || '',
       WABA_ID: data.WABA_ID || '',
-      DEFAULT_PHONE_NUMBER_ID: data.DEFAULT_PHONE_NUMBER_ID || ''
+      DEFAULT_PHONE_NUMBER_ID: data.DEFAULT_PHONE_NUMBER_ID || '',
+      NGROK_URL: data.NGROK_URL || '',
+      NGROK_AUTHTOKEN: decrypted.NGROK_AUTHTOKEN || ''
     });
   } catch (error) {
     res.status(500).json({ error: 'Error fetching meta settings' });
@@ -108,7 +160,7 @@ app.put('/api/meta-settings', authenticateToken, async (req: any, res: any) => {
     }
     const setting = await prisma.systemSetting.findUnique({ where: { id: 'default' } });
     const current: any = setting?.data || {};
-    const next = { ...current, ...req.body };
+    const next = encryptSensitive({ ...current, ...req.body });
     await prisma.systemSetting.upsert({
       where: { id: 'default' },
       update: { data: next },
@@ -1876,7 +1928,7 @@ app.get('/api/settings', authenticateToken, async (req: any, res: any) => {
 app.put('/api/settings', authenticateToken, async (req: any, res: any) => {
   try {
     const current = await getSettings();
-    const next = { ...current, ...req.body };
+    const next = encryptSensitive({ ...current, ...req.body });
     await saveSettings(next);
     res.json(next);
   } catch (error) {

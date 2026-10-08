@@ -64,9 +64,9 @@ services:
     command:
       - "http"
       - "backend:3001"
-      - "--url=https://knee-eclair-agnostic.ngrok-free.dev"
+      - "--url=${NGROK_URL:-https://knee-eclair-agnostic.ngrok-free.dev}"
     environment:
-      - NGROK_AUTHTOKEN=3JxtDqCfbHCcnL1RuB5cyDz6XKl_78jEYzGL2Nt1nszk2nNWh
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN:-}
     depends_on:
       - backend
 
